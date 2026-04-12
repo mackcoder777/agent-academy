@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import * as XLSX from "xlsx";
 
 const C = {
   bg: "#06080B", surface: "#0B0F16", card: "#0F1720", border: "#182430",
@@ -7,7 +8,7 @@ const C = {
 };
 
 const callClaude = async (messages, system, max_tokens) => {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+  const res = await fetch("/api/claude", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -136,34 +137,58 @@ const outputIsDocument = (concept) => {
     l.includes("request") || l.includes("record") || l.includes("tracker");
 };
 
+const readXlsxAsText = async (file) => {
+  const buffer = await file.arrayBuffer();
+  const wb = XLSX.read(buffer, { type: "array" });
+  const lines = [];
+  for (const name of wb.SheetNames) {
+    const ws = wb.Sheets[name];
+    const csv = XLSX.utils.sheet_to_csv(ws, { blankrows: false });
+    if (csv.trim()) { lines.push("=== Sheet: " + name + " ==="); lines.push(csv); }
+  }
+  return lines.join("\n");
+};
+
+const TEMPLATE_PROMPT = "This is a form or template that an AI agent will fill out by reading a source document. Analyze it carefully and return JSON only:\n{\"fields\": [\"all field names in the form\"],\"source_document_fields\": [\"fields extracted from the input document the user uploads each time (line items, descriptions, quantities, prices, dates from the source)\"],\"user_provided_fields\": [\"fields the user provides manually each run (reference numbers, codes, names, departments, approvers)\"],\"computed_fields\": [\"fields the agent calculates (totals, subtotals, page numbers)\"],\"required_inputs\": \"one sentence: what source document does the user upload each time to fill this form?\",\"trigger\": \"one sentence describing when someone would typically fill out this form\",\"outputs\": \"one sentence describing what the completed form looks like\",\"humanGate\": \"one sentence describing when a human should review before submitting\",\"summary\": \"one sentence describing what this form is for\"}";
+
 const analyzeTemplate = async (file, setSuggestions, setAnalysis, setAnalyzing) => {
   setAnalyzing(true);
   try {
-    const reader = new FileReader();
-    const fileContent = await new Promise((resolve, reject) => {
-      reader.onload = e => resolve(e.target.result);
-      reader.onerror = reject;
-      if (file.type === "application/pdf") {
-        reader.readAsDataURL(file);
-      } else {
-        reader.readAsText(file);
-      }
-    });
-
     let messages;
-    if (file.type === "application/pdf") {
+    const isXlsx = file.name.match(/\.xlsx?$/i);
+    const isPdf = file.type === "application/pdf";
+
+    if (isPdf) {
+      const reader = new FileReader();
+      const fileContent = await new Promise((resolve, reject) => {
+        reader.onload = e => resolve(e.target.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
       const b64 = fileContent.split(",")[1];
       messages = [{
         role: "user",
         content: [
           { type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } },
-          { type: "text", text: "This is a form or template that an AI agent will fill out by reading a source document. Analyze it carefully and return JSON only:\n{\"fields\": [\"all field names in the form\"],\"source_document_fields\": [\"fields extracted from the input document the user uploads each time (line items, descriptions, quantities, prices, dates from the source)\"],\"user_provided_fields\": [\"fields the user provides manually each run (reference numbers, codes, names, departments, approvers)\"],\"computed_fields\": [\"fields the agent calculates (totals, subtotals, page numbers)\"],\"required_inputs\": \"one sentence: what source document does the user upload each time to fill this form?\",\"trigger\": \"one sentence describing when someone would typically fill out this form\",\"outputs\": \"one sentence describing what the completed form looks like\",\"humanGate\": \"one sentence describing when a human should review before submitting\",\"summary\": \"one sentence describing what this form is for\"}" }
+          { type: "text", text: TEMPLATE_PROMPT }
         ]
       }];
-    } else {
+    } else if (isXlsx) {
+      const xlsxText = await readXlsxAsText(file);
       messages = [{
         role: "user",
-        content: "This is a form or template that an AI agent will fill out by reading a source document. Analyze it and return JSON only:\n\n" + fileContent.substring(0, 3000) + "\n\n{\"fields\": [\"all field names\"],\"source_document_fields\": [\"fields whose values come from the source document uploaded each run — line items, descriptions, quantities, prices, dates extracted from that document\"],\"user_provided_fields\": [\"fields the user provides manually each run — reference numbers, job codes, approver names, department info\"],\"computed_fields\": [\"fields the agent calculates — totals, subtotals, page numbers\"],\"required_inputs\": \"one sentence: what source document does the user upload each time to fill this form?\",\"trigger\": \"one sentence describing when this form gets filled out\",\"outputs\": \"one sentence describing what the completed form looks like\",\"humanGate\": \"one sentence on when a human should review before submitting\",\"summary\": \"one sentence on what this form is for\"}"
+        content: "This is the content of an Excel template (all sheets extracted as CSV):\n\n" + xlsxText.substring(0, 4000) + "\n\n" + TEMPLATE_PROMPT
+      }];
+    } else {
+      const reader = new FileReader();
+      const fileContent = await new Promise((resolve, reject) => {
+        reader.onload = e => resolve(e.target.result);
+        reader.onerror = reject;
+        reader.readAsText(file);
+      });
+      messages = [{
+        role: "user",
+        content: "This is a form or template content:\n\n" + fileContent.substring(0, 3000) + "\n\n" + TEMPLATE_PROMPT
       }];
     }
 
@@ -380,7 +405,7 @@ function HintCard({ hint, index, addedOption, onInject, onDiscuss }) {
     }}>
       <div style={{ display: "flex", gap: "0.5rem", alignItems: "flex-start" }}>
         <span style={{ color: isAdded ? C.success : C.accent, flexShrink: 0, fontSize: "0.65rem", marginTop: "3px" }}>
-          {isAdded ? "+" : "->"}
+          {isAdded ? "+" : "\u2192"}
         </span>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: "0.82rem", color: isAdded ? C.muted : "#D0E4EE", lineHeight: 1.65, marginBottom: "0.55rem" }}>
