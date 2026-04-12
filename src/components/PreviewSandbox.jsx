@@ -1,0 +1,381 @@
+import { useState, useRef } from "react";
+
+const C = {
+  bg: "#06080B", surface: "#0B0F16", card: "#0F1720", border: "#182430",
+  accent: "#F97316", gold: "#F59E0B", text: "#DCE8F0", muted: "#3D5568",
+  dim: "#1A2535", code: "#040608", success: "#22C55E", cyan: "#22D3EE",
+  purple: "#A78BFA", error: "#EF4444",
+};
+
+const STEP_WEIGHTS = {
+  concept: 20, trigger: 10, inputs: 15, outputs: 15,
+  knowledge: 10, systems: 10, humanGate: 10, name: 5,
+};
+
+const calcConfidence = (agentData) => {
+  if (!agentData) return 0;
+  let score = 0;
+  Object.entries(STEP_WEIGHTS).forEach(([key, weight]) => {
+    const val = agentData[key] || agentData[{ trigger: "triggers", inputs: "inputs", outputs: "outputs", knowledge: "rag", systems: "systems", humanGate: "constraints" }[key] || key] || "";
+    if (val && val.trim().length > 0) {
+      score += weight;
+      if (val.trim().length > 60) score += Math.min(weight * 0.3, 5);
+    }
+  });
+  return Math.min(Math.round(score), 100);
+};
+
+const readFileAsText = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = e => resolve(e.target.result);
+  reader.onerror = reject;
+  if (file.type === "application/pdf") {
+    reader.readAsDataURL(file);
+  } else {
+    reader.readAsText(file);
+  }
+});
+
+const callClaude = async (messages, system, max_tokens) => {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: max_tokens || 1000,
+      messages,
+      ...(system ? { system } : {}),
+    }),
+  });
+  if (!res.ok) throw new Error("API " + res.status);
+  const d = await res.json();
+  return (d.content || []).map(b => b.text || "").join("");
+};
+
+const parseJSON = (text) => {
+  const s = text.replace(/```json/gi, "").replace(/```/g, "").trim();
+  try { return JSON.parse(s); } catch {}
+  const m = s.match(/\{[\s\S]*\}/);
+  if (m) try { return JSON.parse(m[0]); } catch {}
+  return null;
+};
+
+const ConfidenceMeter = ({ score }) => {
+  const color = score < 30 ? C.error : score < 60 ? C.gold : score < 85 ? C.cyan : C.success;
+  const label = score < 30 ? "Minimal definition" : score < 60 ? "Partial definition" : score < 85 ? "Good definition" : "Strong definition";
+  return (
+    <div style={{ marginBottom: "0.85rem" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.3rem" }}>
+        <span style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.muted, letterSpacing: "0.07em" }}>BLUEPRINT CONFIDENCE</span>
+        <span style={{ fontFamily: "monospace", fontSize: "0.65rem", color, fontWeight: 700 }}>{score}%</span>
+      </div>
+      <div style={{ height: "4px", background: C.dim, borderRadius: "2px", overflow: "hidden" }}>
+        <div style={{ width: score + "%", height: "100%", background: color, borderRadius: "2px", transition: "width 0.6s ease, background 0.4s ease" }} />
+      </div>
+      <div style={{ fontFamily: "monospace", fontSize: "0.5rem", color: C.muted, marginTop: "0.2rem" }}>{label}</div>
+    </div>
+  );
+};
+
+const ResultBlock = ({ label, content, color }) => (
+  <div style={{ marginBottom: "0.65rem" }}>
+    <div style={{ fontFamily: "monospace", fontSize: "0.5rem", color: color || C.cyan, letterSpacing: "0.07em", marginBottom: "0.2rem" }}>{label}</div>
+    <div style={{ background: C.code, border: "1px solid " + C.dim, borderRadius: "6px", padding: "0.55rem 0.7rem" }}>
+      {typeof content === "string" ? (
+        <div style={{ fontFamily: "monospace", fontSize: "0.65rem", color: C.text, lineHeight: 1.65, whiteSpace: "pre-wrap" }}>{content}</div>
+      ) : Array.isArray(content) ? (
+        content.map((item, i) => (
+          <div key={i} style={{ display: "flex", gap: "0.4rem", marginBottom: "0.2rem" }}>
+            <span style={{ color: color || C.cyan, flexShrink: 0, fontFamily: "monospace", fontSize: "0.6rem" }}>{i + 1}.</span>
+            <span style={{ fontFamily: "monospace", fontSize: "0.63rem", color: "#B8D0DC", lineHeight: 1.55 }}>{item}</span>
+          </div>
+        ))
+      ) : (
+        Object.entries(content).map(([k, v]) => (
+          <div key={k} style={{ marginBottom: "0.2rem", display: "flex", gap: "0.5rem" }}>
+            <span style={{ fontFamily: "monospace", fontSize: "0.58rem", color: color || C.cyan, flexShrink: 0 }}>{k}:</span>
+            <span style={{ fontFamily: "monospace", fontSize: "0.6rem", color: C.text }}>{String(v)}</span>
+          </div>
+        ))
+      )}
+    </div>
+  </div>
+);
+
+export default function PreviewSandbox({ agentData, currentStep }) {
+  const [input, setInput] = useState("");
+  const [fileName, setFileName] = useState("");
+  const [fileType, setFileType] = useState("");
+  const [fileB64, setFileB64] = useState(null);
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [dragOver, setDragOver] = useState(false);
+  const fileRef = useRef(null);
+
+  const confidence = calcConfidence(agentData);
+  const hasDefinition = agentData && (agentData.concept || "").length > 10;
+
+  const buildBlueprint = () => {
+    if (!agentData) return "No agent defined yet.";
+    return [
+      agentData.agentName && "Agent: " + agentData.agentName,
+      agentData.concept && "Concept: " + agentData.concept,
+      (agentData.triggers || agentData.trigger) && "Triggers: " + (agentData.triggers || agentData.trigger),
+      agentData.inputs && "Inputs: " + agentData.inputs,
+      agentData.outputs && "Outputs: " + agentData.outputs,
+      (agentData.rag || agentData.knowledge) && "Knowledge sources: " + (agentData.rag || agentData.knowledge),
+      agentData.systems && "External systems: " + agentData.systems,
+      agentData.constraints && "Human oversight: " + agentData.constraints,
+    ].filter(Boolean).join("\n");
+  };
+
+  const runPreview = async () => {
+    if (!input.trim() && !fileB64) return;
+    setLoading(true); setError(""); setResult(null);
+
+    try {
+      const blueprint = buildBlueprint();
+      const system = `You are simulating an AI agent based on a partial specification.
+The agent's current definition:
+${blueprint}
+
+When given a sample input, analyze it and show exactly what this agent would do.
+Be specific and concrete — use actual values from the input, not placeholders.
+Return ONLY valid JSON (no markdown):
+{
+  "detected": "what type of document/content this is",
+  "extracted": {"key field": "value found", "key field 2": "value found"},
+  "steps": ["Step 1: what agent does first", "Step 2: what agent does next", "Step 3: etc"],
+  "would_produce": "specific description of the output, including real values from the input",
+  "gaps": ["specific thing missing from definition that would improve this result"],
+  "confidence_note": "one sentence on what would most improve accuracy"
+}`;
+
+      let messages;
+      if (fileB64 && fileType === "application/pdf") {
+        messages = [{
+          role: "user",
+          content: [
+            { type: "document", source: { type: "base64", media_type: "application/pdf", data: fileB64 } },
+            { type: "text", text: "Process this document according to the agent specification above. Show exactly what the agent would do with it." }
+          ]
+        }];
+      } else {
+        const content = input.trim() || "File content: " + fileName;
+        messages = [{
+          role: "user",
+          content: "Process this input according to the agent specification:\n\n" + content + "\n\nShow exactly what the agent would do with this."
+        }];
+      }
+
+      const raw = await callClaude(messages, system, 1000);
+      const parsed = parseJSON(raw);
+      if (parsed) {
+        setResult(parsed);
+      } else {
+        setError("Could not parse agent response. Try again.");
+      }
+    } catch (e) {
+      setError("Connection error: " + e.message);
+    }
+    setLoading(false);
+  };
+
+  const handleFile = async (file) => {
+    setFileName(file.name);
+    setFileType(file.type);
+    setInput("");
+    setResult(null);
+    try {
+      const content = await readFileAsText(file);
+      if (file.type === "application/pdf") {
+        const b64 = content.split(",")[1];
+        setFileB64(b64);
+        setInput("[PDF: " + file.name + "]");
+      } else {
+        setFileB64(null);
+        setInput(content.substring(0, 4000));
+      }
+    } catch (e) {
+      setError("Could not read file: " + e.message);
+    }
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault(); setDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  };
+
+  const missingSteps = [];
+  if (!agentData?.concept) missingSteps.push({ label: "Define your agent concept", step: 1 });
+  if (!agentData?.trigger && !agentData?.triggers) missingSteps.push({ label: "Define what kicks it off", step: 2 });
+  if (!agentData?.inputs) missingSteps.push({ label: "Define what it reads", step: 3 });
+  if (!agentData?.outputs) missingSteps.push({ label: "Define what it produces", step: 4 });
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", background: C.surface, borderLeft: "1px solid " + C.border }}>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.4} }
+        @keyframes fadein { from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none} }
+        .sandbox-result { animation: fadein 0.3s ease; }
+        .drop-zone:hover { border-color: #F97316 !important; background: #0F1720 !important; }
+      `}</style>
+
+      {/* Header */}
+      <div style={{ padding: "0.75rem 1rem", borderBottom: "1px solid " + C.border, flexShrink: 0 }}>
+        <div style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.accent, letterSpacing: "0.1em", marginBottom: "0.15rem" }}>LIVE PREVIEW SANDBOX</div>
+        <div style={{ fontFamily: "monospace", fontSize: "0.58rem", color: C.muted, lineHeight: 1.5 }}>
+          Upload real data. See your agent work right now.
+        </div>
+      </div>
+
+      <div style={{ flex: 1, overflowY: "auto", padding: "0.85rem 1rem" }}>
+
+        {/* Confidence meter */}
+        <ConfidenceMeter score={confidence} />
+
+        {/* Missing steps notice */}
+        {missingSteps.length > 0 && (
+          <div style={{ background: C.dim, border: "1px solid " + C.gold + "33", borderRadius: "7px", padding: "0.55rem 0.7rem", marginBottom: "0.75rem" }}>
+            <div style={{ fontFamily: "monospace", fontSize: "0.5rem", color: C.gold, marginBottom: "0.3rem", letterSpacing: "0.06em" }}>COMPLETE THESE TO IMPROVE RESULTS</div>
+            {missingSteps.map((s, i) => (
+              <div key={i} style={{ fontFamily: "monospace", fontSize: "0.58rem", color: "#8A9AAA", lineHeight: 1.5, display: "flex", gap: "0.35rem" }}>
+                <span style={{ color: C.gold }}>{"→"}</span> {s.label}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Input area */}
+        {!hasDefinition ? (
+          <div style={{ background: C.dim, border: "1px dashed " + C.border, borderRadius: "8px", padding: "1.5rem 1rem", textAlign: "center" }}>
+            <div style={{ fontFamily: "monospace", fontSize: "0.6rem", color: C.muted, lineHeight: 1.7 }}>
+              Complete Step 1 to enable the preview sandbox.
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* Drop zone */}
+            <div
+              className="drop-zone"
+              onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={handleDrop}
+              onClick={() => fileRef.current.click()}
+              style={{
+                border: "1px dashed " + (dragOver ? C.accent : C.border),
+                borderRadius: "8px", padding: "0.75rem 0.85rem",
+                background: dragOver ? "#0F1720" : C.code,
+                cursor: "pointer", marginBottom: "0.6rem",
+                display: "flex", alignItems: "center", gap: "0.6rem",
+                transition: "all 0.2s",
+              }}
+            >
+              <span style={{ fontSize: "1rem", flexShrink: 0 }}>+</span>
+              <div>
+                <div style={{ fontFamily: "monospace", fontSize: "0.6rem", color: fileName ? C.text : C.muted }}>
+                  {fileName || "Drop a file or click to upload"}
+                </div>
+                <div style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.muted, marginTop: "0.1rem" }}>
+                  PDF, TXT, CSV, or any text file
+                </div>
+              </div>
+            </div>
+            <input ref={fileRef} type="file" accept=".pdf,.txt,.csv,.md,.json,.doc,.docx" style={{ display: "none" }} onChange={e => e.target.files[0] && handleFile(e.target.files[0])} />
+
+            {/* OR paste */}
+            <div style={{ fontFamily: "monospace", fontSize: "0.5rem", color: C.muted, textAlign: "center", marginBottom: "0.5rem" }}>OR PASTE CONTENT BELOW</div>
+            <textarea
+              value={fileB64 ? "" : input}
+              onChange={e => { setInput(e.target.value); setFileB64(null); setFileName(""); }}
+              placeholder={"Paste an email, spec excerpt, data sample, or any input your agent would receive..."}
+              rows={4}
+              style={{ width: "100%", background: C.card, border: "1px solid " + C.border, borderRadius: "8px", padding: "0.7rem 0.8rem", color: C.text, fontFamily: "monospace", fontSize: "0.7rem", lineHeight: 1.65, resize: "none", outline: "none", marginBottom: "0.65rem" }}
+            />
+
+            {/* Run button */}
+            <button
+              onClick={runPreview}
+              disabled={loading || (!input.trim() && !fileB64)}
+              style={{
+                width: "100%", background: (loading || (!input.trim() && !fileB64)) ? C.dim : "linear-gradient(135deg," + C.accent + "," + C.gold + ")",
+                border: "none", borderRadius: "8px", padding: "0.7rem",
+                color: (loading || (!input.trim() && !fileB64)) ? C.muted : "#000",
+                fontFamily: "monospace", fontSize: "0.65rem", fontWeight: 700,
+                cursor: (loading || (!input.trim() && !fileB64)) ? "not-allowed" : "pointer",
+                marginBottom: "0.85rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem",
+              }}
+            >
+              {loading
+                ? <><span style={{ display: "inline-block", animation: "spin 1s linear infinite" }}>o</span> Running agent preview...</>
+                : "RUN PREVIEW →"}
+            </button>
+
+            {error && (
+              <div style={{ background: C.error + "15", border: "1px solid " + C.error + "44", borderRadius: "6px", padding: "0.5rem 0.7rem", marginBottom: "0.65rem" }}>
+                <div style={{ fontFamily: "monospace", fontSize: "0.6rem", color: C.error }}>{error}</div>
+              </div>
+            )}
+
+            {/* Results */}
+            {result && (
+              <div className="sandbox-result">
+                <div style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.success, letterSpacing: "0.08em", marginBottom: "0.6rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                  <span style={{ color: C.success }}>+</span> AGENT PREVIEW COMPLETE
+                </div>
+
+                {result.detected && (
+                  <ResultBlock label="DETECTED INPUT TYPE" content={result.detected} color={C.cyan} />
+                )}
+
+                {result.extracted && Object.keys(result.extracted).length > 0 && (
+                  <ResultBlock label="DATA EXTRACTED" content={result.extracted} color={C.purple} />
+                )}
+
+                {result.steps && result.steps.length > 0 && (
+                  <ResultBlock label="AGENT WOULD DO THIS" content={result.steps} color={C.accent} />
+                )}
+
+                {result.would_produce && (
+                  <ResultBlock label="OUTPUT PRODUCED" content={result.would_produce} color={C.gold} />
+                )}
+
+                {result.gaps && result.gaps.length > 0 && (
+                  <div style={{ marginBottom: "0.65rem" }}>
+                    <div style={{ fontFamily: "monospace", fontSize: "0.5rem", color: C.gold, letterSpacing: "0.07em", marginBottom: "0.2rem" }}>COMPLETE MORE STEPS TO IMPROVE</div>
+                    <div style={{ background: C.code, border: "1px solid " + C.dim, borderRadius: "6px", padding: "0.55rem 0.7rem" }}>
+                      {result.gaps.map((g, i) => (
+                        <div key={i} style={{ display: "flex", gap: "0.4rem", marginBottom: "0.2rem" }}>
+                          <span style={{ color: C.gold, flexShrink: 0, fontFamily: "monospace", fontSize: "0.6rem" }}>{"→"}</span>
+                          <span style={{ fontFamily: "monospace", fontSize: "0.62rem", color: "#A0B8C8", lineHeight: 1.55 }}>{g}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {result.confidence_note && (
+                  <div style={{ background: C.dim, border: "1px solid " + C.border, borderRadius: "6px", padding: "0.5rem 0.65rem" }}>
+                    <div style={{ fontFamily: "monospace", fontSize: "0.58rem", color: C.muted, lineHeight: 1.6 }}>
+                      {result.confidence_note}
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  onClick={() => { setResult(null); setInput(""); setFileName(""); setFileB64(null); }}
+                  style={{ width: "100%", background: "transparent", border: "1px solid " + C.border, borderRadius: "6px", padding: "0.45rem", color: C.muted, fontFamily: "monospace", fontSize: "0.58rem", cursor: "pointer", marginTop: "0.6rem" }}
+                >
+                  Run again with different input
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
