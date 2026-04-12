@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import * as XLSX from "xlsx";
 
 const C = {
   bg: "#06080B", surface: "#0B0F16", card: "#0F1720", border: "#182430",
@@ -125,34 +126,61 @@ const outputIsDocument = (concept) => {
     l.includes("request") || l.includes("record") || l.includes("tracker");
 };
 
+const readXlsxAsText = async (file) => {
+  const buffer = await file.arrayBuffer();
+  const wb = XLSX.read(buffer, { type: "array" });
+  const lines = [];
+  for (const name of wb.SheetNames) {
+    const ws = wb.Sheets[name];
+    const csv = XLSX.utils.sheet_to_csv(ws, { blankrows: false });
+    if (csv.trim()) {
+      lines.push(`=== Sheet: ${name} ===`);
+      lines.push(csv);
+    }
+  }
+  return lines.join("\n");
+};
+
 const analyzeTemplate = async (file, setSuggestions, setAnalysis, setAnalyzing) => {
   setAnalyzing(true);
   try {
-    const reader = new FileReader();
-    const fileContent = await new Promise((resolve, reject) => {
-      reader.onload = e => resolve(e.target.result);
-      reader.onerror = reject;
-      if (file.type === "application/pdf") {
-        reader.readAsDataURL(file);
-      } else {
-        reader.readAsText(file);
-      }
-    });
-
     let messages;
-    if (file.type === "application/pdf") {
+    const isXlsx = file.name.match(/\.xlsx?$/i);
+    const isPdf = file.type === "application/pdf";
+    const prompt = "This is a form or template that an AI agent will fill out. Analyze it and return JSON only:\n{\"fields\": [\"field name 1\", \"field name 2\", ...],\"required_inputs\": \"one sentence describing what data the user must provide to fill this form\",\"trigger\": \"one sentence describing when someone would typically fill out this form\",\"outputs\": \"one sentence describing what the completed form looks like and where it goes\",\"humanGate\": \"one sentence describing when a human should review before submitting\",\"summary\": \"one sentence describing what this form is for\"}";
+
+    if (isPdf) {
+      const reader = new FileReader();
+      const fileContent = await new Promise((resolve, reject) => {
+        reader.onload = e => resolve(e.target.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
       const b64 = fileContent.split(",")[1];
       messages = [{
         role: "user",
         content: [
           { type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } },
-          { type: "text", text: "This is a form or template that an AI agent will fill out. Analyze it and return JSON only:\n{\"fields\": [\"field name 1\", \"field name 2\", ...],\"required_inputs\": \"one sentence describing what data the user must provide to fill this form\",\"trigger\": \"one sentence describing when someone would typically fill out this form\",\"outputs\": \"one sentence describing what the completed form looks like and where it goes\",\"humanGate\": \"one sentence describing when a human should review before submitting\",\"summary\": \"one sentence describing what this form is for\"}" }
+          { type: "text", text: prompt }
         ]
       }];
-    } else {
+    } else if (isXlsx) {
+      // Parse xlsx with SheetJS — extract all sheets as CSV text
+      const xlsxText = await readXlsxAsText(file);
       messages = [{
         role: "user",
-        content: "This is a form or template that an AI agent will fill out:\n\n" + fileContent.substring(0, 3000) + "\n\nAnalyze it and return JSON only:\n{\"fields\": [\"field name 1\", \"field name 2\", ...],\"required_inputs\": \"one sentence describing what data the user must provide to fill this form\",\"trigger\": \"one sentence describing when someone would typically fill out this form\",\"outputs\": \"one sentence describing what the completed form looks like and where it goes\",\"humanGate\": \"one sentence describing when a human should review before submitting\",\"summary\": \"one sentence describing what this form is for\"}"
+        content: "This is the content of an Excel template (all sheets extracted as CSV):\n\n" + xlsxText.substring(0, 4000) + "\n\n" + prompt
+      }];
+    } else {
+      const reader = new FileReader();
+      const fileContent = await new Promise((resolve, reject) => {
+        reader.onload = e => resolve(e.target.result);
+        reader.onerror = reject;
+        reader.readAsText(file);
+      });
+      messages = [{
+        role: "user",
+        content: "This is a form or template that an AI agent will fill out:\n\n" + fileContent.substring(0, 3000) + "\n\n" + prompt
       }];
     }
 
@@ -160,7 +188,6 @@ const analyzeTemplate = async (file, setSuggestions, setAnalysis, setAnalyzing) 
     const analysis = parseJSON(raw);
     if (analysis) {
       setAnalysis(analysis);
-      // Pre-fill suggestions based on template analysis
       setSuggestions(prev => ({
         ...prev,
         inputs: analysis.required_inputs || prev.inputs,
