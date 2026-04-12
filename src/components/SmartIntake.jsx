@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect } from "react";
-import * as XLSX from "xlsx";
 
 const C = {
   bg: "#06080B", surface: "#0B0F16", card: "#0F1720", border: "#182430",
@@ -8,7 +7,7 @@ const C = {
 };
 
 const callClaude = async (messages, system, max_tokens) => {
-  const res = await fetch("/api/claude", {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -68,13 +67,24 @@ const getFallback = (concept, key) => {
   return generic[key] || "";
 };
 
-const buildContext = (data) => {
+const buildContext = (data, analysis) => {
   const parts = [];
   if (data.concept) parts.push("CONCEPT: " + data.concept);
   if (data.trigger) parts.push("TRIGGER: " + data.trigger);
   if (data.inputs) parts.push("INPUTS: " + data.inputs);
   if (data.outputs) parts.push("OUTPUTS: " + data.outputs);
   if (data.template) parts.push("OUTPUT TEMPLATE: " + data.template);
+  // If template was analyzed, inject categorized fields — critical for accurate coaching
+  if (analysis && analysis.fields && analysis.fields.length > 0) {
+    if (analysis.summary) parts.push("TEMPLATE SUMMARY: " + analysis.summary);
+    if (analysis.required_inputs) parts.push("SOURCE DOCUMENT NEEDED: " + analysis.required_inputs);
+    if (analysis.source_document_fields && analysis.source_document_fields.length > 0)
+      parts.push("FIELDS EXTRACTED FROM SOURCE DOCUMENT: " + analysis.source_document_fields.join(", "));
+    if (analysis.user_provided_fields && analysis.user_provided_fields.length > 0)
+      parts.push("FIELDS USER PROVIDES MANUALLY: " + analysis.user_provided_fields.join(", "));
+    if (analysis.computed_fields && analysis.computed_fields.length > 0)
+      parts.push("FIELDS AGENT COMPUTES: " + analysis.computed_fields.join(", "));
+  }
   if (data.crossReference) parts.push("CROSS-REFERENCE DOCS: " + data.crossReference);
   if (data.knowledge) parts.push("HISTORICAL KNOWLEDGE: " + data.knowledge);
   if (data.systems) parts.push("SYSTEMS: " + data.systems);
@@ -126,61 +136,34 @@ const outputIsDocument = (concept) => {
     l.includes("request") || l.includes("record") || l.includes("tracker");
 };
 
-const readXlsxAsText = async (file) => {
-  const buffer = await file.arrayBuffer();
-  const wb = XLSX.read(buffer, { type: "array" });
-  const lines = [];
-  for (const name of wb.SheetNames) {
-    const ws = wb.Sheets[name];
-    const csv = XLSX.utils.sheet_to_csv(ws, { blankrows: false });
-    if (csv.trim()) {
-      lines.push(`=== Sheet: ${name} ===`);
-      lines.push(csv);
-    }
-  }
-  return lines.join("\n");
-};
-
 const analyzeTemplate = async (file, setSuggestions, setAnalysis, setAnalyzing) => {
   setAnalyzing(true);
   try {
-    let messages;
-    const isXlsx = file.name.match(/\.xlsx?$/i);
-    const isPdf = file.type === "application/pdf";
-    const prompt = "This is a form or template that an AI agent will fill out. Analyze it and return JSON only:\n{\"fields\": [\"field name 1\", \"field name 2\", ...],\"required_inputs\": \"one sentence describing what data the user must provide to fill this form\",\"trigger\": \"one sentence describing when someone would typically fill out this form\",\"outputs\": \"one sentence describing what the completed form looks like and where it goes\",\"humanGate\": \"one sentence describing when a human should review before submitting\",\"summary\": \"one sentence describing what this form is for\"}";
-
-    if (isPdf) {
-      const reader = new FileReader();
-      const fileContent = await new Promise((resolve, reject) => {
-        reader.onload = e => resolve(e.target.result);
-        reader.onerror = reject;
+    const reader = new FileReader();
+    const fileContent = await new Promise((resolve, reject) => {
+      reader.onload = e => resolve(e.target.result);
+      reader.onerror = reject;
+      if (file.type === "application/pdf") {
         reader.readAsDataURL(file);
-      });
+      } else {
+        reader.readAsText(file);
+      }
+    });
+
+    let messages;
+    if (file.type === "application/pdf") {
       const b64 = fileContent.split(",")[1];
       messages = [{
         role: "user",
         content: [
           { type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } },
-          { type: "text", text: prompt }
+          { type: "text", text: "This is a form or template that an AI agent will fill out by reading a source document. Analyze it carefully and return JSON only:\n{\"fields\": [\"all field names in the form\"],\"source_document_fields\": [\"fields extracted from the input document the user uploads each time (line items, descriptions, quantities, prices, dates from the source)\"],\"user_provided_fields\": [\"fields the user provides manually each run (reference numbers, codes, names, departments, approvers)\"],\"computed_fields\": [\"fields the agent calculates (totals, subtotals, page numbers)\"],\"required_inputs\": \"one sentence: what source document does the user upload each time to fill this form?\",\"trigger\": \"one sentence describing when someone would typically fill out this form\",\"outputs\": \"one sentence describing what the completed form looks like\",\"humanGate\": \"one sentence describing when a human should review before submitting\",\"summary\": \"one sentence describing what this form is for\"}" }
         ]
       }];
-    } else if (isXlsx) {
-      // Parse xlsx with SheetJS — extract all sheets as CSV text
-      const xlsxText = await readXlsxAsText(file);
-      messages = [{
-        role: "user",
-        content: "This is the content of an Excel template (all sheets extracted as CSV):\n\n" + xlsxText.substring(0, 4000) + "\n\n" + prompt
-      }];
     } else {
-      const reader = new FileReader();
-      const fileContent = await new Promise((resolve, reject) => {
-        reader.onload = e => resolve(e.target.result);
-        reader.onerror = reject;
-        reader.readAsText(file);
-      });
       messages = [{
         role: "user",
-        content: "This is a form or template that an AI agent will fill out:\n\n" + fileContent.substring(0, 3000) + "\n\n" + prompt
+        content: "This is a form or template that an AI agent will fill out by reading a source document. Analyze it and return JSON only:\n\n" + fileContent.substring(0, 3000) + "\n\n{\"fields\": [\"all field names\"],\"source_document_fields\": [\"fields whose values come from the source document uploaded each run — line items, descriptions, quantities, prices, dates extracted from that document\"],\"user_provided_fields\": [\"fields the user provides manually each run — reference numbers, job codes, approver names, department info\"],\"computed_fields\": [\"fields the agent calculates — totals, subtotals, page numbers\"],\"required_inputs\": \"one sentence: what source document does the user upload each time to fill this form?\",\"trigger\": \"one sentence describing when this form gets filled out\",\"outputs\": \"one sentence describing what the completed form looks like\",\"humanGate\": \"one sentence on when a human should review before submitting\",\"summary\": \"one sentence on what this form is for\"}"
       }];
     }
 
@@ -188,6 +171,7 @@ const analyzeTemplate = async (file, setSuggestions, setAnalysis, setAnalyzing) 
     const analysis = parseJSON(raw);
     if (analysis) {
       setAnalysis(analysis);
+      // Pre-fill suggestions based on template analysis
       setSuggestions(prev => ({
         ...prev,
         inputs: analysis.required_inputs || prev.inputs,
@@ -567,7 +551,7 @@ export default function SmartIntake({ onComplete }) {
     coachTimer.current = setTimeout(async () => {
       setHintsLoading(true);
       try {
-        const ctx = buildContext(data);
+        const ctx = buildContext(data, templateAnalysis);
         const correction = correctionRef.current || "";
         const q = cur.coachQ(val, data.concept || "", ctx, correction);
         const raw = await callClaude([{ role: "user", content: q }], "", 500);
@@ -638,7 +622,7 @@ export default function SmartIntake({ onComplete }) {
     try {
       const raw = await callClaude([{
         role: "user",
-        content: "Here is everything we know about an AI agent being designed:\n\n" + contextSoFar +
+        content: "Here is everything we know about an AI agent being designed:\n\n" + contextSoFar + (templateAnalysis && templateAnalysis.fields ? "\n\nOUTPUT FORM FIELDS: " + templateAnalysis.fields.join(", ") : "") +
           "\n\n" + (domainCtx ? domainCtx + "\n\n" : "") +
           "Based on this specific agent, answer this question by providing 3 concrete options the user can choose from:\n" +
           questionMap[stepKey] +
@@ -660,7 +644,25 @@ export default function SmartIntake({ onComplete }) {
     try {
       const raw = await callClaude([{
         role: "user",
-        content: "Agent concept: \"" + concept + "\"\n\nGenerate specific suggestions for each field. Think about the agent lifecycle. Always suggest the simplest viable approach first. Return ONLY raw JSON with no markdown:\n{\"trigger\":\"...\",\"inputs\":\"...\",\"outputs\":\"...\",\"knowledge\":\"...\",\"systems\":\"...\",\"humanGate\":\"when to stop and check with a human before taking action\"}"
+        content: (() => {
+          const domainCtx = getDomainContext(concept);
+          const tmplCtx = templateAnalysis && templateAnalysis.summary
+            ? "\n\nOUTPUT FORM ALREADY UPLOADED AND ANALYZED:\n" +
+              "Form purpose: " + (templateAnalysis.summary || "") + "\n" +
+              (templateAnalysis.required_inputs ? "Source document the user uploads each run: " + templateAnalysis.required_inputs + "\n" : "") +
+              (templateAnalysis.source_document_fields && templateAnalysis.source_document_fields.length
+                ? "Fields extracted FROM that source document: " + templateAnalysis.source_document_fields.join(", ") + "\n"
+                : "") +
+              (templateAnalysis.user_provided_fields && templateAnalysis.user_provided_fields.length
+                ? "Fields the user provides manually: " + templateAnalysis.user_provided_fields.join(", ") + "\n"
+                : "") +
+              "Use this to generate precise suggestions. The INPUT is the source document. The OUTPUT is the completed form. Do not confuse them."
+            : "";
+          return "Agent concept: \"" + concept + "\"" +
+            (domainCtx ? "\n\n" + domainCtx : "") +
+            tmplCtx +
+            "\n\nGenerate specific suggestions for each field. Think about the agent lifecycle. Always suggest the simplest viable approach first. Return ONLY raw JSON with no markdown:\n{\"trigger\":\"...\",\"inputs\":\"...\",\"outputs\":\"...\",\"knowledge\":\"...\",\"systems\":\"...\",\"humanGate\":\"when to stop and check with a human before taking action\"}";
+        })()
       }], "", 500);
       const parsed = parseJSON(raw);
       if (parsed && parsed.trigger) {
@@ -761,7 +763,7 @@ export default function SmartIntake({ onComplete }) {
     const hist = [...chatHistory, { role: "user", content: msg }];
     setChatHistory(hist);
     try {
-      const ctx = buildContext(data);
+      const ctx = buildContext(data, templateAnalysis);
       const sys = "You help people design AI agents in plain English.\n\nEverything defined so far:\n" + ctx + "\n\nCurrent step: \"" + cur.headline + "\" — " + cur.sub + "\n\nCRITICAL RULES:\n1. Stay ONLY on the current step. Do NOT ask about or mention future steps.\n2. When you reach a conclusion or solution together, end your response with: SOLUTION: [one concise sentence summarizing what was decided] so the user can inject it.\n3. Keep responses under 80 words.\n4. No jargon. Concrete examples from their specific agent only.";
       const r = await callClaude(hist, sys, 250);
       // Extract solution if present
