@@ -1929,7 +1929,7 @@ export default function AgentAcademy() {
           @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap');
           *{box-sizing:border-box} ::-webkit-scrollbar{width:3px} ::-webkit-scrollbar-thumb{background:${C.border};border-radius:2px}
           @keyframes spin{to{transform:rotate(360deg)}}
-          @media (max-width: 1024px) { .intake-layout { flex-direction: column !important; } .preview-panel { display: none !important; } }
+          @media (max-width: 1024px) { .intake-layout { flex-direction: column !important; } .preview-panel { flex: 1 1 100% !important; max-width: 100% !important; height: auto !important; position: relative !important; border-left: none !important; border-top: 1px solid ${C.border} !important; } }
         `}</style>
         <div className="intake-layout" style={{ display: "flex", minHeight: "100vh" }}>
           <div style={{ flex: "0 0 60%", maxWidth: "60%", overflow: "auto" }}>
