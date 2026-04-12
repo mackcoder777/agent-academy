@@ -1935,11 +1935,9 @@ export default function AgentAcademy() {
           <div style={{ flex: "0 0 60%", maxWidth: "60%", overflow: "auto" }}>
             <SmartIntake onComplete={(data) => { setAgentData(data); setIntakeComplete(true); }} />
           </div>
-          {intakeStep >= 1 && (
-            <div className="preview-panel" style={{ flex: "0 0 40%", maxWidth: "40%", borderLeft: `1px solid ${C.border}`, overflow: "auto", position: "sticky", top: 0, height: "100vh" }}>
-              <PreviewSandbox agentData={agentData} currentStep={intakeStep} />
-            </div>
-          )}
+          <div className="preview-panel" style={{ flex: "0 0 40%", maxWidth: "40%", borderLeft: `1px solid ${C.border}`, overflow: "auto", position: "sticky", top: 0, height: "100vh" }}>
+            <PreviewSandbox agentData={agentData} currentStep={intakeStep} />
+          </div>
         </div>
       </div>
     );
