@@ -514,7 +514,7 @@ export default function SmartIntake({ onComplete }) {
             {window._agentAcademyComplete && (
               <button onClick={() => { window._agentAcademyComplete(); window._agentAcademyComplete = null; }}
                 style={{ width: "100%", background: "linear-gradient(135deg," + C.accent + "," + C.gold + ")", border: "none", borderRadius: "8px", padding: "0.65rem", color: "#000", fontFamily: "monospace", fontSize: "0.65rem", fontWeight: 700, cursor: "pointer", marginBottom: "0.5rem" }}>
-                START ACADEMY — DEPLOY & IMPROVE ->
+                {"START ACADEMY \u2014 DEPLOY & IMPROVE \u2192"}
               </button>
             )}
             <button onClick={() => { setBlueprint(null); setStep(0); setData({}); setSuggestions({}); setSuggestState("idle"); }}
