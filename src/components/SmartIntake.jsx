@@ -288,16 +288,69 @@ function ChatBox({ open, onToggle, history, onSend, loading, solution, onInjectS
 }
 
 // ─── TEMPLATE STEP ────────────────────────────────────────────────────────────
-function TemplateStepUI({ isForm, templateFile, templateAnalysis, analyzing, onUpload, onRemoveTemplate }) {
-  const [path, setPath] = useState(null);
+function TemplateStepUI({ isForm, isRequired, templateFile, templateAnalysis, analyzing, onUpload, onRemoveTemplate }) {
+  const [path, setPath] = useState(isRequired ? "upload" : null); // Required = go straight to upload
   const fileRef = useRef(null);
 
+  // Required template (form-filling): show upload UI immediately
+  if (isRequired && path === "upload") return (
+    <div>
+      <div style={{ fontFamily: "monospace", fontSize: "0.6rem", color: C.muted, lineHeight: 1.65, marginBottom: "0.85rem", background: C.dim, borderRadius: "7px", padding: "0.6rem 0.8rem", borderLeft: "3px solid " + C.gold }}>
+        Once uploaded, the agent reads your form's field names and structure — it figures out how to fill them from vendor quotes automatically. You only need to clarify things it genuinely can't infer from the form itself.
+      </div>
+      {!templateFile ? (
+        <div onClick={() => fileRef.current.click()} style={{ border: "2px dashed " + C.gold + "66", borderRadius: "10px", padding: "1.75rem 1rem", textAlign: "center", cursor: "pointer", background: C.dim }}>
+          <div style={{ fontFamily: "monospace", fontSize: "0.7rem", color: C.gold, marginBottom: "0.3rem" }}>Drop your form here or tap to upload</div>
+          <div style={{ fontFamily: "monospace", fontSize: "0.55rem", color: C.muted }}>Excel, PDF, Word, or CSV — the actual form file, not a description of it</div>
+          <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,.pdf,.doc,.docx" style={{ display: "none" }} onChange={e => e.target.files[0] && onUpload(e.target.files[0], "upload")} />
+        </div>
+      ) : (
+        <div>
+          <div style={{ background: C.success + "0A", border: "1px solid " + C.success + "44", borderRadius: "8px", padding: "0.65rem 0.85rem", marginBottom: "0.5rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <span style={{ color: C.success }}>✓</span>
+            <span style={{ fontFamily: "monospace", fontSize: "0.65rem", color: C.text, flex: 1 }}>{templateFile.name}</span>
+            <button onClick={onRemoveTemplate} style={{ background: "transparent", border: "none", color: C.muted, cursor: "pointer", fontFamily: "monospace", fontSize: "0.6rem" }}>Remove</button>
+          </div>
+          {analyzing && (
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.4rem 0" }}>
+              <span style={{ color: C.gold, fontFamily: "monospace", fontSize: "0.6rem" }}>○</span>
+              <span style={{ fontFamily: "monospace", fontSize: "0.6rem", color: C.gold }}>Reading your form — extracting fields and structure...</span>
+            </div>
+          )}
+          {templateAnalysis && !analyzing && (
+            <div style={{ background: C.code, border: "1px solid " + C.success + "33", borderRadius: "8px", padding: "0.65rem 0.85rem" }}>
+              <div style={{ fontFamily: "monospace", fontSize: "0.47rem", color: C.success, letterSpacing: "0.07em", marginBottom: "0.35rem" }}>FORM UNDERSTOOD — agent knows your field structure</div>
+              <div style={{ fontFamily: "monospace", fontSize: "0.6rem", color: "#80A890", lineHeight: 1.6, marginBottom: "0.4rem" }}>{templateAnalysis.summary}</div>
+              {templateAnalysis.fields?.length > 0 && (
+                <div>
+                  <div style={{ fontFamily: "monospace", fontSize: "0.47rem", color: C.muted, marginBottom: "0.25rem", letterSpacing: "0.06em" }}>FIELDS DETECTED:</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "0.25rem" }}>
+                    {templateAnalysis.fields.slice(0, 14).map((f, i) => (
+                      <span key={i} style={{ background: C.success + "22", border: "1px solid " + C.success + "33", borderRadius: "4px", padding: "0.1rem 0.4rem", fontFamily: "monospace", fontSize: "0.47rem", color: C.success }}>{f}</span>
+                    ))}
+                    {templateAnalysis.fields.length > 14 && <span style={{ fontFamily: "monospace", fontSize: "0.47rem", color: C.muted }}>+{templateAnalysis.fields.length - 14} more</span>}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+      {/* Option to skip even for required (they can always add later) */}
+      <button onClick={() => { setPath("skip"); onUpload(null, "skip"); }}
+        style={{ marginTop: "0.75rem", background: "transparent", border: "none", color: C.muted, fontFamily: "monospace", fontSize: "0.55rem", cursor: "pointer", padding: 0 }}>
+        I don't have the file right now — skip and add from dashboard →
+      </button>
+    </div>
+  );
+
+  // Optional template (non-form agents): show path picker first
   if (!path) return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
       {[
-        { id: "upload", label: isForm ? "Upload our existing form" : "Upload our existing template", desc: isForm ? "Your agent learns your exact fields, column names, and format. Without it, it produces generic output you'll have to reformat every run." : "Your agent follows your exact output structure every run.", rec: true },
-        { id: "generate", label: "Help me create one", desc: "We'll suggest a structure based on your agent description and industry standards. You review it before launch.", rec: false },
-        { id: "skip", label: "Skip for now", desc: "Agent produces best-effort output. Your dashboard will prompt you to add a template after your first run.", rec: false },
+        { id: "upload", label: "Upload our existing template", desc: "Agent follows your exact output structure every run.", rec: true },
+        { id: "generate", label: "Help me create one", desc: "We'll suggest a structure based on your agent description. You review it before launch.", rec: false },
+        { id: "skip", label: "Skip for now", desc: "Agent produces best-effort output. Dashboard will prompt you to add a template after your first run.", rec: false },
       ].map(opt => (
         <button key={opt.id} onClick={() => { setPath(opt.id); if (opt.id !== "upload") onUpload(null, opt.id); }}
           style={{ background: C.card, border: "1px solid " + (opt.rec ? C.gold + "66" : C.border), borderRadius: "10px", padding: "0.85rem 1rem", cursor: "pointer", textAlign: "left" }}>
@@ -316,7 +369,7 @@ function TemplateStepUI({ isForm, templateFile, templateAnalysis, analyzing, onU
       <button onClick={() => { setPath(null); onRemoveTemplate(); }} style={{ background: "transparent", border: "none", color: C.muted, fontFamily: "monospace", fontSize: "0.55rem", cursor: "pointer", marginBottom: "0.65rem", padding: 0 }}>← Choose different path</button>
       {!templateFile ? (
         <div onClick={() => fileRef.current.click()} style={{ border: "2px dashed " + C.gold + "55", borderRadius: "10px", padding: "1.5rem 1rem", textAlign: "center", cursor: "pointer", background: C.dim }}>
-          <div style={{ fontFamily: "monospace", fontSize: "0.65rem", color: C.gold, marginBottom: "0.3rem" }}>Drop your form here or tap to upload</div>
+          <div style={{ fontFamily: "monospace", fontSize: "0.65rem", color: C.gold, marginBottom: "0.3rem" }}>Drop your template here or tap to upload</div>
           <div style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.muted }}>Excel, PDF, Word, or CSV</div>
           <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,.pdf,.doc,.docx" style={{ display: "none" }} onChange={e => e.target.files[0] && onUpload(e.target.files[0], "upload")} />
         </div>
@@ -327,24 +380,11 @@ function TemplateStepUI({ isForm, templateFile, templateAnalysis, analyzing, onU
             <span style={{ fontFamily: "monospace", fontSize: "0.65rem", color: C.text, flex: 1 }}>{templateFile.name}</span>
             <button onClick={onRemoveTemplate} style={{ background: "transparent", border: "none", color: C.muted, cursor: "pointer", fontFamily: "monospace", fontSize: "0.6rem" }}>Remove</button>
           </div>
-          {analyzing && (
-            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.4rem 0" }}>
-              <span style={{ color: C.gold, fontFamily: "monospace", fontSize: "0.6rem", display: "inline-block" }}>○</span>
-              <span style={{ fontFamily: "monospace", fontSize: "0.6rem", color: C.gold }}>Reading your form — extracting fields and structure...</span>
-            </div>
-          )}
+          {analyzing && <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.4rem 0" }}><span style={{ color: C.gold, fontFamily: "monospace", fontSize: "0.6rem" }}>○</span><span style={{ fontFamily: "monospace", fontSize: "0.6rem", color: C.gold }}>Reading your template...</span></div>}
           {templateAnalysis && !analyzing && (
             <div style={{ background: C.code, border: "1px solid " + C.success + "33", borderRadius: "8px", padding: "0.65rem 0.85rem" }}>
-              <div style={{ fontFamily: "monospace", fontSize: "0.47rem", color: C.success, letterSpacing: "0.07em", marginBottom: "0.35rem" }}>FORM ANALYZED — steps pre-filled from your template</div>
-              <div style={{ fontFamily: "monospace", fontSize: "0.6rem", color: "#80A890", lineHeight: 1.6, marginBottom: "0.4rem" }}>{templateAnalysis.summary}</div>
-              {templateAnalysis.fields?.length > 0 && (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "0.25rem" }}>
-                  {templateAnalysis.fields.slice(0, 14).map((f, i) => (
-                    <span key={i} style={{ background: C.success + "22", border: "1px solid " + C.success + "33", borderRadius: "4px", padding: "0.1rem 0.4rem", fontFamily: "monospace", fontSize: "0.47rem", color: C.success }}>{f}</span>
-                  ))}
-                  {templateAnalysis.fields.length > 14 && <span style={{ fontFamily: "monospace", fontSize: "0.47rem", color: C.muted }}>+{templateAnalysis.fields.length - 14} more</span>}
-                </div>
-              )}
+              <div style={{ fontFamily: "monospace", fontSize: "0.47rem", color: C.success, letterSpacing: "0.07em", marginBottom: "0.35rem" }}>TEMPLATE ANALYZED</div>
+              <div style={{ fontFamily: "monospace", fontSize: "0.6rem", color: "#80A890", lineHeight: 1.6 }}>{templateAnalysis.summary}</div>
             </div>
           )}
         </div>
@@ -352,7 +392,6 @@ function TemplateStepUI({ isForm, templateFile, templateAnalysis, analyzing, onU
     </div>
   );
 
-  // generate or skip paths
   return (
     <div>
       <button onClick={() => { setPath(null); onRemoveTemplate(); }} style={{ background: "transparent", border: "none", color: C.muted, fontFamily: "monospace", fontSize: "0.55rem", cursor: "pointer", marginBottom: "0.65rem", padding: 0 }}>← Choose different path</button>
@@ -627,6 +666,26 @@ function BlueprintCompleteScreen({ data, classification, standingUploads, humanG
   );
 }
 
+
+// ─── STEP SEQUENCES BY WORKFLOW TYPE ─────────────────────────────────────────
+// Single source of truth. Rule: if the answer wouldn't change what the agent
+// does, don't ask. Form-filling agents get 3 steps — the form tells us everything.
+const stepsForWorkflow = (workflowType, isForm) => {
+  if (workflowType === "form_filling" || isForm) {
+    // Get the form immediately — it defines inputs, outputs, and field structure.
+    // Don't ask about inputs or outputs separately; they're inferred from the form.
+    return ["concept", "template", "name"];
+  }
+  if (workflowType === "classifier" || workflowType === "researcher") {
+    return ["concept", "inputs", "outputs", "name"];
+  }
+  if (workflowType === "drafter") {
+    return ["concept", "inputs", "outputs", "standing_context", "name"];
+  }
+  // Default document processor — template optional based on output description
+  return ["concept", "inputs", "outputs", "template", "name"];
+};
+
 // ─── PRE-STEP ─────────────────────────────────────────────────────────────────
 function PreStep({ onClassified }) {
   const [val, setVal] = useState("");
@@ -638,16 +697,20 @@ function PreStep({ onClassified }) {
     const isForm = outputIsForm(concept);
     const isDoc = outputIsDocument(concept);
     try {
-      const raw = await callClaude([{ role: "user", content: `${domainCtx ? domainCtx + "\n\n" : ""}User wants to automate: "${concept}"\n\nClassify and return ONLY JSON:\n{"industry":"construction|legal|finance|hr|sales|support|healthcare|general","workflow_type":"form_filling|document_processor|classifier|drafter|researcher|data_updater","complexity":"simple|medium|complex","output_is_form":true|false,"required_steps":["concept","inputs","outputs","name"],"understanding":"I'm treating this as [specific business process at their company]..."}\n\nrequired_steps rules: always include concept,inputs,outputs,name. Add template if output_is_form=true or agent fills a form. Add standing_context if complexity=medium or complex. Add humanGate if complexity=complex or agent takes external actions. Only include what changes what the agent does.` }], "", 500);
+      const raw = await callClaude([{ role: "user", content: `${domainCtx ? domainCtx + "\n\n" : ""}User wants to automate: "${concept}"\n\nClassify and return ONLY JSON:\n{"industry":"construction|legal|finance|hr|sales|support|healthcare|general","workflow_type":"form_filling|document_processor|classifier|drafter|researcher|data_updater","complexity":"simple|medium|complex","output_is_form":true|false,"understanding":"I'm treating this as [specific business process at their company]..."}\n\nDo NOT include required_steps — that is determined by workflow_type separately.` }], "", 400);
       const parsed = parseJSON(raw);
-      if (parsed?.required_steps) return parsed;
+      if (parsed?.workflow_type) {
+        // Determine steps based on workflow type — not by Claude
+        parsed.required_steps = stepsForWorkflow(parsed.workflow_type, parsed.output_is_form || isForm);
+        return parsed;
+      }
     } catch (e) {}
     return {
       industry: "general",
       workflow_type: isForm ? "form_filling" : isDoc ? "document_processor" : "document_processor",
       complexity: isForm ? "medium" : "simple",
       output_is_form: isForm,
-      required_steps: ["concept", "inputs", "outputs", ...(isDoc ? ["template"] : []), ...(isForm ? ["standing_context"] : []), "name"],
+      required_steps: stepsForWorkflow(isForm ? "form_filling" : "document_processor", isForm),
       understanding: "I'm treating this as a document processing agent that reads inputs and produces structured output.",
     };
   };
@@ -733,35 +796,55 @@ export default function SmartIntake({ onComplete }) {
   const isLast = stepIdx === steps.length - 1;
   const pct = steps.length > 0 ? Math.round((stepIdx / (steps.length - 1)) * 100) : 0;
 
-  // Build steps from classification
+  // Build steps from classification — uses stepsForWorkflow as single source of truth
   const buildSteps = (cls) => {
-    const rs = cls?.required_steps || ["concept", "inputs", "outputs", "name"];
+    const isForm = cls?.output_is_form || cls?.workflow_type === "form_filling";
+    const rs = cls?.required_steps || stepsForWorkflow(cls?.workflow_type || "document_processor", isForm);
+
     const defs = {
       concept: {
         key: "concept", headline: "What should your agent do?",
         sub: "Describe it like you're explaining it to a new employee. What comes in, what comes out.",
         placeholder: "e.g. Read vendor quote PDFs and fill out our company's standard Material Request form with all the line items, quantities, and prices from the quote...",
         hint: "Include: what it reads, what it produces, and any accuracy requirements.",
+        // Coaching: suppress field-mapping, validation, approval workflow — those are agent implementation details
+        coachQ: (val, ctx, _cls, correction) => {
+          const domainCtx = getDomainContext(val);
+          const correctionCtx = correction ? `IMPORTANT: User clarified: "${correction}". Apply everywhere.\n\n` : "";
+          return `${domainCtx ? domainCtx + "\n\n" : ""}${correctionCtx}Agent description: "${val}"\n\nReturn JSON with exactly these keys:\n{"understanding":"I'm treating this as [specific business process assumption]...","hints":[{"gap":"short label","why":"one sentence: what goes wrong without this","options":["option A","option B","option C"]}]}\n\n2-3 hints max. IMPORTANT RULES:\n- Do NOT suggest anything about field mapping, data validation rules, or approval workflows — those are handled automatically\n- Do NOT suggest uploading the output template here — that has its own dedicated step\n- Focus only on what's unclear about the concept itself\n- Options must be specific to THIS agent\nReturn ONLY JSON.`;
+        },
       },
       inputs: {
         key: "inputs", headline: "What does it read each time you run it?",
         sub: "Every time you give your agent work, what does it need to look at?",
         placeholder: "e.g. The vendor quote PDF — uploaded manually each time I run it...",
         hint: "This is the new work you hand it each run. Documents it always has access to are set up separately.",
+        coachQ: (val, ctx) => {
+          const already = [];
+          if (data.template) already.push("output template already captured");
+          return `Agent context:\n${ctx}\n\nInputs described: "${val}"\n\nWhat inputs are missing? ${already.length ? "Already resolved: " + already.join(", ") + ". Do not re-ask about these." : ""}\nFocus: file type, format, metadata needed each run. Do NOT suggest uploading the output template — that has its own step. Do NOT suggest field mapping or validation rules.\n\nReturn ONLY JSON array:\n[{"gap":"short label","why":"what fails without this","options":["A","B","C"]}]`;
+        },
       },
       outputs: {
         key: "outputs", headline: "What do you want when it's done?",
         sub: "When the agent finishes, what should exist that didn't before? Be specific.",
         placeholder: "e.g. A completed Material Request form with all vendor quote line items in the correct columns, quantities, unit prices, and totals filled in...",
         hint: "The more specific you are, the more consistent it gets. 'A summary' means something different every run. 'A one-page memo with specific fields' means the same thing every time.",
+        coachQ: (val, ctx) => `Agent context:\n${ctx}\n\nOutputs described: "${val}"\n\nWhat output details are missing? Do NOT suggest field mapping, approval workflow integration, or data validation rules — those are handled at the agent level. Focus only on: format, specific required fields, where it goes. Return ONLY JSON array:\n[{"gap":"short label","why":"what goes wrong without this","options":["A","B","C"]}]`,
       },
       template: {
-        key: "template", isTemplate: true, noCoach: true,
-        headline: cls?.output_is_form ? "Does your company have a standard form for this?" : "Does it follow a specific output format?",
-        sub: cls?.output_is_form
-          ? "Your agent fills out a form. Upload your actual form and it will learn your exact fields, column names, and structure. Without it, it produces generic output you'll have to reformat every run."
+        key: "template",
+        isTemplate: true,
+        noCoach: true,
+        // For form-filling: required, upload-first UI. For others: optional path picker.
+        isRequiredTemplate: isForm,
+        headline: isForm
+          ? "Upload your company form."
+          : "Does it follow a specific output format?",
+        sub: isForm
+          ? "Your agent fills out this form. Upload it now — it reads the actual field names and structure, then figures out how to fill it from vendor quotes automatically. You only need to clarify the things it genuinely can't infer."
           : "If your company has a standard template or format for this output, upload it. Your agent will follow your exact structure every time.",
-        optional: !cls?.output_is_form,
+        optional: !isForm,
       },
       standing_context: {
         key: "standing_context", isStandingContext: true, noCoach: true, optional: true,
@@ -773,11 +856,10 @@ export default function SmartIntake({ onComplete }) {
         headline: "When should it stop and check with you?",
         sub: "Your agent handles routine work automatically. Configure the moments where it stops and gets you before proceeding.",
         starterHints: [
-          { gap: "No review gate before delivering output", why: "Without this gate, errors reach their destination with no safety net. You only discover mistakes after they've caused problems.", options: ["always show me the output before saving or sending", "only pause if a required field couldn't be filled", "run automatically — I'll review the output myself afterwards"] },
+          { gap: "No review gate before delivering output", why: "Without this gate, errors reach their destination with no safety net. You only discover mistakes after they've caused problems.", options: ["always show me the completed output before saving or sending", "only pause if a required field couldn't be filled", "run automatically — I'll review the output myself"] },
           { gap: "No handling when source data is unclear or missing", why: "A blank field that goes unnoticed is worse than a flagged gap — the form looks complete but isn't.", options: ["stop and ask me for any missing required field", "leave the field blank and flag it clearly", "make a best guess and mark it for my review"] },
-          { gap: "No check when agent confidence is low", why: "Some inputs are ambiguous. An agent that guesses silently produces unpredictable output.", options: ["flag for review when confidence is below 80%", "always note when it had to make a judgment call", "run automatically and highlight any low-confidence values"] },
+          { gap: "No check when confidence is low", why: "Some vendor quotes are ambiguous. An agent that guesses silently is unpredictable.", options: ["flag for my review when confidence is below 80%", "always note when it had to make a judgment call in the output", "run automatically and highlight any low-confidence values in the result"] },
         ],
-        coachQ: (val, ctx) => `Agent context:\n${ctx}\n\nOversight described: "${val}"\n\nWhat oversight gates are missing? Think about: external actions, silent failures, irreversible steps. Return ONLY JSON array:\n[{"gap":"short label","why":"what goes wrong without this gate","options":["A","B","C"]}]`,
       },
       name: {
         key: "name", headline: "Give it a name.", sub: "What do you want to call this agent?",
@@ -848,18 +930,26 @@ export default function SmartIntake({ onComplete }) {
     coachTimer.current = setTimeout(async () => {
       setHintsLoading(true);
       try {
-        const ctx = buildContext(data);
-        const correction = correctionRef.current ? `IMPORTANT: User clarified: "${correctionRef.current}". Use this context everywhere.\n\n` : "";
-        const domainCtx = cur.key === "concept" ? getDomainContext(val) : getDomainContext(data.concept || "");
-
         let q;
-        if (cur.key === "concept") {
-          q = `${domainCtx ? domainCtx + "\n\n" : ""}${correction}Agent description: "${val}"\n\nReturn JSON with exactly these keys:\n{"understanding":"I'm treating this as [specific business process assumption at their company]...","hints":[{"gap":"short label","why":"one sentence: what goes wrong without this","options":["option A","option B","option C"]}]}\n\n2-3 hints max. Make options specific to THIS agent. Return ONLY JSON.`;
-        } else if (cur.coachQ) {
-          q = cur.coachQ(val, buildContext(data));
+        if (cur.coachQ) {
+          // Step defines its own coaching prompt with suppression built in
+          q = cur.coachQ(val, buildContext(data), classification, correctionRef.current);
+        } else if (cur.key === "concept") {
+          const domainCtx = getDomainContext(val);
+          const correctionCtx = correctionRef.current ? `IMPORTANT: User clarified: "${correctionRef.current}". Apply everywhere.\n\n` : "";
+          q = `${domainCtx ? domainCtx + "\n\n" : ""}${correctionCtx}Agent description: "${val}"\n\nReturn JSON:\n{"understanding":"I'm treating this as [specific process]...","hints":[{"gap":"short label","why":"what goes wrong","options":["A","B","C"]}]}\n\nRULES: Do NOT suggest field mapping, data validation, approval workflows, or uploading the output template. 2-3 hints max. Return ONLY JSON.`;
         } else {
-          const stepLabel = { inputs: "inputs", outputs: "outputs", humanGate: "human oversight" }[cur.key] || cur.key;
-          q = `${domainCtx ? domainCtx + "\n\n" : ""}${correction}Agent context:\n${ctx}\n\n${stepLabel} described: "${val}"\n\nWhat is missing or incomplete? Options must be specific to THIS agent. Return ONLY JSON array:\n[{"gap":"short label","why":"what goes wrong without this","options":["A","B","C"]}]`;
+          const domainCtx = getDomainContext(data.concept || "");
+          const ctx = buildContext(data);
+          const correctionCtx = correctionRef.current ? `IMPORTANT: User clarified: "${correctionRef.current}".\n\n` : "";
+          // Build resolved list so coaching doesn't repeat already-captured info
+          const resolved = [
+            templateFile && "output form/template already uploaded — do not re-ask",
+            data.template && "output format already captured — do not re-ask",
+            data.inputs && "inputs already defined",
+            data.outputs && "outputs already defined",
+          ].filter(Boolean);
+          q = `${domainCtx ? domainCtx + "\n\n" : ""}${correctionCtx}Agent context:\n${ctx}\n\n${resolved.length ? "ALREADY RESOLVED — do not re-ask these: " + resolved.join("; ") + "\n\n" : ""}Current step "${cur.key}" described as: "${val}"\n\nWhat is genuinely missing? RULES: Do NOT suggest field mapping, data validation logic, approval workflow integration — the agent handles these automatically. Do NOT re-ask about anything in the resolved list. Return ONLY JSON array:\n[{"gap":"short label","why":"what fails without this","options":["A","B","C"]}]`;
         }
 
         const raw = await callClaude([{ role: "user", content: q }], "", 500);
@@ -1091,6 +1181,7 @@ export default function SmartIntake({ onComplete }) {
             {cur.isTemplate ? (
               <TemplateStepUI
                 isForm={classification?.output_is_form}
+                isRequired={cur.isRequiredTemplate}
                 templateFile={templateFile}
                 templateAnalysis={templateAnalysis}
                 analyzing={analyzingTemplate}
