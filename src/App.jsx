@@ -3,11 +3,11 @@ import SmartIntake from "./components/SmartIntake";
 import PreviewSandbox from "./components/PreviewSandbox";
 
 const C = {
-  bg: "#F8F9FB", surface: "#FFFFFF", card: "#FFFFFF", border: "#E5E7EB",
-  accent: "#7C3AED", gold: "#7C3AED", cyan: "#7C3AED", purple: "#7C3AED",
-  green: "#059669", pink: "#EC4899", orange: "#F97316",
-  text: "#1F2937", muted: "#6B7280", dim: "#F3F4F6", code: "#F9FAFB",
-  success: "#059669", error: "#EF4444",
+  bg: "#07090C", surface: "#0C1017", card: "#111820", border: "#1A2530",
+  accent: "#F97316", gold: "#F59E0B", cyan: "#22D3EE", purple: "#A78BFA",
+  green: "#4ADE80", pink: "#F472B6", orange: "#FB923C",
+  text: "#DCE8F0", muted: "#4A6070", dim: "#1E2D3A", code: "#050709",
+  success: "#22C55E", error: "#EF4444",
 };
 
 const TIERS = [
@@ -1904,32 +1904,49 @@ export default function AgentAcademy() {
   const toggleTier = (t) => setOpenTiers(p => { const n = new Set(p); n.has(t) ? n.delete(t) : n.add(t); return n; });
 
   const fmt = (text) => text
-    .replace(/^## (.+)$/gm, `<div style="color:${tierColor};font-weight:700;font-size:0.95rem;margin:1.2rem 0 0.4rem;font-family:'Inter',sans-serif;letter-spacing:0.03em">$1</div>`)
+    .replace(/^## (.+)$/gm, `<div style="color:${tierColor};font-weight:700;font-size:0.95rem;margin:1.2rem 0 0.4rem;font-family:'Syne',sans-serif;letter-spacing:0.03em">$1</div>`)
     .replace(/\*\*(.+?)\*\*/g, `<strong style="color:${C.text};font-weight:700">$1</strong>`)
-    .replace(/```([\s\S]+?)```/g, `<pre style="background:${C.code};color:#7DD3A8;padding:0.9rem;border-radius:6px;font-family:'Inter',sans-serif;font-size:0.76rem;overflow-x:auto;margin:0.8rem 0;border-left:2px solid ${tierColor};white-space:pre-wrap">$1</pre>`)
-    .replace(/`([^`]+)`/g, `<code style="background:${C.code};color:${tierColor};padding:0.1em 0.35em;border-radius:3px;font-size:0.83em;font-family:'Inter',sans-serif">$1</code>`)
+    .replace(/```([\s\S]+?)```/g, `<pre style="background:${C.code};color:#7DD3A8;padding:0.9rem;border-radius:6px;font-family:'Space Mono',monospace;font-size:0.76rem;overflow-x:auto;margin:0.8rem 0;border-left:2px solid ${tierColor};white-space:pre-wrap">$1</pre>`)
+    .replace(/`([^`]+)`/g, `<code style="background:${C.code};color:${tierColor};padding:0.1em 0.35em;border-radius:3px;font-size:0.83em;font-family:'Space Mono',monospace">$1</code>`)
     .replace(/^- (.+)$/gm, `<div style="display:flex;gap:0.5rem;margin:0.2rem 0"><span style="color:${tierColor};flex-shrink:0">▸</span><span>$1</span></div>`)
     .replace(/\n\n/g, `<div style="height:0.6rem"></div>`)
     .replace(/\n/g, "<br/>");
 
   const fmtResp = (text) => text
     .replace(/\*\*(.+?)\*\*/g, `<strong style="color:${C.gold}">$1</strong>`)
-    .replace(/`([^`]+)`/g, `<code style="background:${C.code};color:#7DD3A8;padding:0.1em 0.35em;border-radius:3px;font-size:0.82em;font-family:'Inter',sans-serif">$1</code>`)
+    .replace(/`([^`]+)`/g, `<code style="background:${C.code};color:#7DD3A8;padding:0.1em 0.35em;border-radius:3px;font-size:0.82em;font-family:'Space Mono',monospace">$1</code>`)
     .replace(/^#+\s(.+)$/gm, `<div style="color:${tierColor};font-weight:700;margin:0.75rem 0 0.25rem">$1</div>`)
     .replace(/\n\n/g, `<div style="height:0.5rem"></div>`)
     .replace(/\n/g, "<br/>");
 
   const tierModules = (tid) => MODULES.filter(m => m.tier === tid);
 
-  // If intake not complete, show SmartIntake (it handles its own layout with position:fixed modal)
+  // If intake not complete, show SmartIntake + PreviewSandbox layout
   if (showIntake && !intakeComplete) {
-    return <SmartIntake onComplete={(data) => { setAgentData(data); setIntakeComplete(true); }} />;
+    return (
+      <div style={{ fontFamily: "'Syne',sans-serif", background: C.bg, minHeight: "100vh", color: C.text }}>
+        <style>{`
+          @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap');
+          *{box-sizing:border-box} ::-webkit-scrollbar{width:3px} ::-webkit-scrollbar-thumb{background:${C.border};border-radius:2px}
+          @keyframes spin{to{transform:rotate(360deg)}}
+          @media (max-width: 1024px) { .intake-layout { flex-direction: column !important; } .preview-panel { flex: 1 1 100% !important; max-width: 100% !important; height: auto !important; position: relative !important; border-left: none !important; border-top: 1px solid ${C.border} !important; } }
+        `}</style>
+        <div className="intake-layout" style={{ display: "flex", minHeight: "100vh" }}>
+          <div style={{ flex: "0 0 60%", maxWidth: "60%", overflow: "auto" }}>
+            <SmartIntake onComplete={(data) => { setAgentData(data); setIntakeComplete(true); }} />
+          </div>
+          <div className="preview-panel" style={{ flex: "0 0 40%", maxWidth: "40%", borderLeft: `1px solid ${C.border}`, overflow: "auto", position: "sticky", top: 0, height: "100vh" }}>
+            <PreviewSandbox agentData={agentData} currentStep={intakeStep} />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div style={{ fontFamily: "'Inter',sans-serif", background: C.bg, minHeight: "100vh", color: C.text, display: "flex", flexDirection: "column" }}>
+    <div style={{ fontFamily: "'Syne',sans-serif", background: C.bg, minHeight: "100vh", color: C.text, display: "flex", flexDirection: "column" }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap');
         *{box-sizing:border-box} ::-webkit-scrollbar{width:3px} ::-webkit-scrollbar-thumb{background:${C.border};border-radius:2px}
         .hov:hover{opacity:0.8} textarea{resize:vertical} @keyframes spin{to{transform:rotate(360deg)}}
         .tierbtn:hover{background:${C.dim}!important} .modbtn:hover{background:${C.card}!important}
@@ -1938,16 +1955,16 @@ export default function AgentAcademy() {
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
           <div>
             <div style={{ fontWeight: 800, fontSize: "0.9rem", color: C.accent, letterSpacing: "0.12em" }}>AGENT ACADEMY</div>
-            <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.6rem", color: C.muted }}>34-module world-class curriculum</div>
+            <div style={{ fontFamily: "'Space Mono',monospace", fontSize: "0.6rem", color: C.muted }}>34-module world-class curriculum</div>
           </div>
           <div style={{ width: "1px", height: "28px", background: C.border }} />
-          <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.62rem", color: C.muted }}>{done.size}/34 labs</div>
+          <div style={{ fontFamily: "'Space Mono',monospace", fontSize: "0.62rem", color: C.muted }}>{done.size}/34 labs</div>
           <div style={{ width: "100px", height: "3px", background: C.border, borderRadius: "2px", overflow: "hidden" }}>
             <div style={{ width: `${progress}%`, height: "100%", background: `linear-gradient(90deg,${C.accent},${C.gold})`, transition: "width 0.4s" }} />
           </div>
-          <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.65rem", color: C.accent, fontWeight: 700 }}>{progress}%</div>
+          <div style={{ fontFamily: "'Space Mono',monospace", fontSize: "0.65rem", color: C.accent, fontWeight: 700 }}>{progress}%</div>
         </div>
-        <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.62rem", color: C.muted }}>
+        <div style={{ fontFamily: "'Space Mono',monospace", fontSize: "0.62rem", color: C.muted }}>
           MOD {String(mod.id).padStart(2, "0")} · TIER {mod.tier} · {TIERS.find(t => t.id === mod.tier)?.label}
         </div>
       </div>
@@ -1964,8 +1981,8 @@ export default function AgentAcademy() {
                   <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                     <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: tier.color, flexShrink: 0 }} />
                     <div>
-                      <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.58rem", color: tier.color, letterSpacing: "0.08em", fontWeight: 700 }}>T{tier.id} · {tier.label}</div>
-                      <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.55rem", color: C.muted }}>{tierDone}/{mods.length} complete</div>
+                      <div style={{ fontFamily: "'Space Mono',monospace", fontSize: "0.58rem", color: tier.color, letterSpacing: "0.08em", fontWeight: 700 }}>T{tier.id} · {tier.label}</div>
+                      <div style={{ fontFamily: "'Space Mono',monospace", fontSize: "0.55rem", color: C.muted }}>{tierDone}/{mods.length} complete</div>
                     </div>
                   </div>
                   <span style={{ color: C.muted, fontSize: "0.7rem" }}>{isOpen ? "▾" : "▸"}</span>
@@ -1978,10 +1995,10 @@ export default function AgentAcademy() {
                     <button key={m.id} onClick={() => goto(idx)}
                       style={{ width: "100%", textAlign: "left", background: isCur ? C.card : "transparent", border: "none", borderBottom: `1px solid ${C.border}`, padding: "0.5rem 0.9rem 0.5rem 1.3rem", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                       <div>
-                        <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.58rem", color: isCur ? tier.color : C.muted, fontWeight: isCur ? 700 : 400 }}>
+                        <div style={{ fontFamily: "'Space Mono',monospace", fontSize: "0.58rem", color: isCur ? tier.color : C.muted, fontWeight: isCur ? 700 : 400 }}>
                           {String(m.id).padStart(2, "0")} {m.title}
                         </div>
-                        <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.53rem", color: C.muted, marginTop: "1px" }}>{m.sub.substring(0, 32)}…</div>
+                        <div style={{ fontFamily: "'Space Mono',monospace", fontSize: "0.53rem", color: C.muted, marginTop: "1px" }}>{m.sub.substring(0, 32)}…</div>
                       </div>
                       {isDone && <span style={{ color: C.success, fontSize: "0.65rem" }}>✓</span>}
                     </button>
@@ -1995,19 +2012,19 @@ export default function AgentAcademy() {
           <div style={{ marginBottom: "1.5rem", paddingBottom: "1.25rem", borderBottom: `1px solid ${C.border}` }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.5rem" }}>
               <div style={{ background: `${tierColor}22`, border: `1px solid ${tierColor}44`, borderRadius: "4px", padding: "0.2rem 0.6rem" }}>
-                <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.6rem", color: tierColor, letterSpacing: "0.08em", fontWeight: 700 }}>
+                <span style={{ fontFamily: "'Space Mono',monospace", fontSize: "0.6rem", color: tierColor, letterSpacing: "0.08em", fontWeight: 700 }}>
                   MOD {String(mod.id).padStart(2, "0")} · TIER {mod.tier}
                 </span>
               </div>
-              {done.has(current) && <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.6rem", color: C.success }}>● LAB COMPLETE</span>}
+              {done.has(current) && <span style={{ fontFamily: "'Space Mono',monospace", fontSize: "0.6rem", color: C.success }}>● LAB COMPLETE</span>}
             </div>
             <h1 style={{ fontWeight: 800, fontSize: "1.8rem", margin: 0, color: C.text, lineHeight: 1.1 }}>{mod.title}</h1>
-            <p style={{ fontFamily: "'Inter',sans-serif", color: tierColor, fontSize: "0.78rem", margin: "0.4rem 0 0", fontStyle: "italic" }}>{mod.sub}</p>
+            <p style={{ fontFamily: "'Space Mono',monospace", color: tierColor, fontSize: "0.78rem", margin: "0.4rem 0 0", fontStyle: "italic" }}>{mod.sub}</p>
           </div>
           <div style={{ display: "flex", gap: "0.25rem", marginBottom: "1.5rem", borderBottom: `1px solid ${C.border}` }}>
             {[["theory","01 THEORY"],["lab","02 INTERACTIVE LAB"],["challenge","03 CHALLENGE"]].map(([id,label]) => (
               <button key={id} onClick={() => setTab(id)}
-                style={{ background: "transparent", border: "none", borderBottom: `2px solid ${tab === id ? tierColor : "transparent"}`, color: tab === id ? tierColor : C.muted, fontFamily: "'Inter',sans-serif", fontSize: "0.65rem", fontWeight: 700, cursor: "pointer", padding: "0.4rem 0.9rem 0.65rem", letterSpacing: "0.08em" }}>
+                style={{ background: "transparent", border: "none", borderBottom: `2px solid ${tab === id ? tierColor : "transparent"}`, color: tab === id ? tierColor : C.muted, fontFamily: "'Space Mono',monospace", fontSize: "0.65rem", fontWeight: 700, cursor: "pointer", padding: "0.4rem 0.9rem 0.65rem", letterSpacing: "0.08em" }}>
                 {label}
               </button>
             ))}
@@ -2017,7 +2034,7 @@ export default function AgentAcademy() {
               <div style={{ lineHeight: 1.85, fontSize: "0.875rem", color: "#C0D4E0" }}
                 dangerouslySetInnerHTML={{ __html: fmt(mod.theory) }} />
               <div style={{ marginTop: "2rem", padding: "0.9rem 1rem", background: C.card, border: `1px solid ${C.border}`, borderRadius: "6px", borderLeft: `3px solid ${C.gold}` }}>
-                <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.6rem", color: C.gold, marginBottom: "0.4rem" }}>READY?</div>
+                <div style={{ fontFamily: "'Space Mono',monospace", fontSize: "0.6rem", color: C.gold, marginBottom: "0.4rem" }}>READY?</div>
                 <div style={{ fontSize: "0.82rem", color: C.muted }}>
                   Go to <span style={{ color: tierColor, cursor: "pointer" }} onClick={() => setTab("lab")}>Interactive Lab</span> for AI feedback, or <span style={{ color: tierColor, cursor: "pointer" }} onClick={() => setTab("challenge")}>Challenge</span> if you're ready to build.
                 </div>
@@ -2027,24 +2044,24 @@ export default function AgentAcademy() {
           {tab === "lab" && (
             <div style={{ maxWidth: "760px" }}>
               <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: "8px", padding: "1rem", marginBottom: "1.25rem" }}>
-                <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.6rem", color: tierColor, letterSpacing: "0.08em", marginBottom: "0.5rem" }}>◈ LAB BRIEF</div>
-                <div style={{ fontSize: "0.8rem", color: C.muted, lineHeight: 1.7, fontFamily: "'Inter',sans-serif" }}>
+                <div style={{ fontFamily: "'Space Mono',monospace", fontSize: "0.6rem", color: tierColor, letterSpacing: "0.08em", marginBottom: "0.5rem" }}>◈ LAB BRIEF</div>
+                <div style={{ fontSize: "0.8rem", color: C.muted, lineHeight: 1.7, fontFamily: "'Space Mono',monospace" }}>
                   Submit your design below. A senior architect AI will evaluate your thinking, identify what's missing, and push you deeper.
                 </div>
               </div>
               <textarea value={input} onChange={e => setInput(e.target.value)} placeholder={mod.placeholder}
-                style={{ width: "100%", minHeight: "150px", background: C.code, border: `1px solid ${C.border}`, borderRadius: "8px", padding: "1rem", color: C.text, fontFamily: "'Inter',sans-serif", fontSize: "0.8rem", lineHeight: 1.7, marginBottom: "1rem" }} />
+                style={{ width: "100%", minHeight: "150px", background: C.code, border: `1px solid ${C.border}`, borderRadius: "8px", padding: "1rem", color: C.text, fontFamily: "'Space Mono',monospace", fontSize: "0.8rem", lineHeight: 1.7, marginBottom: "1rem" }} />
               <button className="hov" onClick={callLab} disabled={loading || !input.trim()}
-                style={{ background: loading ? C.dim : `linear-gradient(135deg,${tierColor},${tierColor}99)`, border: "none", borderRadius: "6px", padding: "0.7rem 1.4rem", color: loading ? C.muted : "#000", fontFamily: "'Inter',sans-serif", fontSize: "0.7rem", fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", letterSpacing: "0.08em", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                style={{ background: loading ? C.dim : `linear-gradient(135deg,${tierColor},${tierColor}99)`, border: "none", borderRadius: "6px", padding: "0.7rem 1.4rem", color: loading ? C.muted : "#000", fontFamily: "'Space Mono',monospace", fontSize: "0.7rem", fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", letterSpacing: "0.08em", display: "flex", alignItems: "center", gap: "0.5rem" }}>
                 {loading ? <><span style={{ display: "inline-block", animation: "spin 1s linear infinite" }}>◌</span>EVALUATING…</> : "SUBMIT FOR EVALUATION ▸"}
               </button>
               {response && (
                 <div ref={respRef} style={{ marginTop: "1.5rem", background: C.card, border: `1px solid ${C.border}`, borderRadius: "8px", overflow: "hidden" }}>
                   <div style={{ background: C.dim, padding: "0.55rem 1rem", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: "0.5rem" }}>
                     <span style={{ color: C.success, fontSize: "0.65rem" }}>●</span>
-                    <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.6rem", color: C.muted }}>SENIOR ARCHITECT EVALUATION</span>
+                    <span style={{ fontFamily: "'Space Mono',monospace", fontSize: "0.6rem", color: C.muted }}>SENIOR ARCHITECT EVALUATION</span>
                   </div>
-                  <div style={{ padding: "1.25rem", fontSize: "0.84rem", lineHeight: 1.85, color: "#B0C8D8", fontFamily: "'Inter',sans-serif" }}
+                  <div style={{ padding: "1.25rem", fontSize: "0.84rem", lineHeight: 1.85, color: "#B0C8D8", fontFamily: "'Space Mono',monospace" }}
                     dangerouslySetInnerHTML={{ __html: fmtResp(response) }} />
                 </div>
               )}
@@ -2053,21 +2070,21 @@ export default function AgentAcademy() {
           {tab === "challenge" && (
             <div style={{ maxWidth: "760px" }}>
               <div style={{ background: C.card, border: `1px solid ${tierColor}44`, borderRadius: "8px", padding: "1.25rem", marginBottom: "1.25rem", borderLeft: `3px solid ${tierColor}` }}>
-                <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.6rem", color: tierColor, letterSpacing: "0.08em", marginBottom: "0.75rem" }}>⚡ PRACTICAL CHALLENGE</div>
-                <div style={{ fontSize: "0.87rem", lineHeight: 1.8, color: C.text, fontFamily: "'Inter',sans-serif" }}>{mod.challenge}</div>
+                <div style={{ fontFamily: "'Space Mono',monospace", fontSize: "0.6rem", color: tierColor, letterSpacing: "0.08em", marginBottom: "0.75rem" }}>⚡ PRACTICAL CHALLENGE</div>
+                <div style={{ fontSize: "0.87rem", lineHeight: 1.8, color: C.text, fontFamily: "'Space Mono',monospace" }}>{mod.challenge}</div>
               </div>
               <textarea value={input} onChange={e => setInput(e.target.value)} placeholder="Write your challenge response here. Be production-grade."
-                style={{ width: "100%", minHeight: "180px", background: C.code, border: `1px solid ${C.border}`, borderRadius: "8px", padding: "1rem", color: C.text, fontFamily: "'Inter',sans-serif", fontSize: "0.8rem", lineHeight: 1.7, marginBottom: "1rem" }} />
+                style={{ width: "100%", minHeight: "180px", background: C.code, border: `1px solid ${C.border}`, borderRadius: "8px", padding: "1rem", color: C.text, fontFamily: "'Space Mono',monospace", fontSize: "0.8rem", lineHeight: 1.7, marginBottom: "1rem" }} />
               <button className="hov" onClick={callLab} disabled={loading || !input.trim()}
-                style={{ background: loading ? C.dim : `linear-gradient(135deg,${C.gold},#D97706)`, border: "none", borderRadius: "6px", padding: "0.7rem 1.4rem", color: "#000", fontFamily: "'Inter',sans-serif", fontSize: "0.7rem", fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", letterSpacing: "0.08em" }}>
+                style={{ background: loading ? C.dim : `linear-gradient(135deg,${C.gold},#D97706)`, border: "none", borderRadius: "6px", padding: "0.7rem 1.4rem", color: "#000", fontFamily: "'Space Mono',monospace", fontSize: "0.7rem", fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", letterSpacing: "0.08em" }}>
                 {loading ? "EVALUATING…" : "SUBMIT CHALLENGE ▸"}
               </button>
               {response && (
                 <div ref={respRef} style={{ marginTop: "1.5rem", background: C.card, border: `1px solid ${C.border}`, borderRadius: "8px", overflow: "hidden" }}>
                   <div style={{ background: C.dim, padding: "0.55rem 1rem", borderBottom: `1px solid ${C.border}` }}>
-                    <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.6rem", color: C.gold }}>◈ CHALLENGE REVIEW</span>
+                    <span style={{ fontFamily: "'Space Mono',monospace", fontSize: "0.6rem", color: C.gold }}>◈ CHALLENGE REVIEW</span>
                   </div>
-                  <div style={{ padding: "1.25rem", fontSize: "0.84rem", lineHeight: 1.85, color: "#B0C8D8", fontFamily: "'Inter',sans-serif" }}
+                  <div style={{ padding: "1.25rem", fontSize: "0.84rem", lineHeight: 1.85, color: "#B0C8D8", fontFamily: "'Space Mono',monospace" }}
                     dangerouslySetInnerHTML={{ __html: fmtResp(response) }} />
                 </div>
               )}
@@ -2075,12 +2092,12 @@ export default function AgentAcademy() {
           )}
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: "2.5rem", paddingTop: "1.25rem", borderTop: `1px solid ${C.border}`, maxWidth: "760px" }}>
             <button className="hov" onClick={() => goto(Math.max(0, current - 1))} disabled={current === 0}
-              style={{ background: "transparent", border: `1px solid ${current === 0 ? C.dim : C.border}`, borderRadius: "6px", padding: "0.55rem 1.1rem", color: current === 0 ? C.dim : C.muted, fontFamily: "'Inter',sans-serif", fontSize: "0.65rem", cursor: current === 0 ? "not-allowed" : "pointer" }}>
+              style={{ background: "transparent", border: `1px solid ${current === 0 ? C.dim : C.border}`, borderRadius: "6px", padding: "0.55rem 1.1rem", color: current === 0 ? C.dim : C.muted, fontFamily: "'Space Mono',monospace", fontSize: "0.65rem", cursor: current === 0 ? "not-allowed" : "pointer" }}>
               ← PREV
             </button>
-            <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.6rem", color: C.muted, display: "flex", alignItems: "center" }}>{current + 1} / 34</div>
+            <div style={{ fontFamily: "'Space Mono',monospace", fontSize: "0.6rem", color: C.muted, display: "flex", alignItems: "center" }}>{current + 1} / 34</div>
             <button className="hov" onClick={() => goto(Math.min(33, current + 1))} disabled={current === 33}
-              style={{ background: current === 33 ? "transparent" : `linear-gradient(135deg,${tierColor},${tierColor}88)`, border: `1px solid ${current === 33 ? C.dim : "transparent"}`, borderRadius: "6px", padding: "0.55rem 1.1rem", color: current === 33 ? C.dim : "#000", fontFamily: "'Inter',sans-serif", fontSize: "0.65rem", fontWeight: 700, cursor: current === 33 ? "not-allowed" : "pointer" }}>
+              style={{ background: current === 33 ? "transparent" : `linear-gradient(135deg,${tierColor},${tierColor}88)`, border: `1px solid ${current === 33 ? C.dim : "transparent"}`, borderRadius: "6px", padding: "0.55rem 1.1rem", color: current === 33 ? C.dim : "#000", fontFamily: "'Space Mono',monospace", fontSize: "0.65rem", fontWeight: 700, cursor: current === 33 ? "not-allowed" : "pointer" }}>
               NEXT →
             </button>
           </div>
