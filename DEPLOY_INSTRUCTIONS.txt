@@ -1,0 +1,99 @@
+AGENT ACADEMY — DEPLOY INSTRUCTIONS FOR MACK
+Updated: April 2026
+=============================================
+
+FILES IN THIS FOLDER:
+- PRODUCT_SPEC.md — Full product spec and roadmap
+- PreviewSandbox.txt — Rename to PreviewSandbox.jsx and deploy
+- SmartIntake_part1.txt — Part 1 of SmartIntake (see below)
+- SmartIntake_part2.txt — Part 2 of SmartIntake (see below)
+
+HOW TO ASSEMBLE SMARTINTAKE:
+SmartIntake.jsx is too large for a single Box upload (~96KB).
+Download both parts and combine:
+
+  On Mac/Linux:
+  cat SmartIntake_part1.txt SmartIntake_part2.txt > SmartIntake.jsx
+
+  On Windows:
+  copy /b SmartIntake_part1.txt + SmartIntake_part2.txt SmartIntake.jsx
+
+Then deploy SmartIntake.jsx to src/components/SmartIntake.jsx
+
+=============================================
+FIXES IN THIS BUILD:
+=============================================
+
+1. MULTIPLE HINT SELECTIONS + UNDO
+   - Click an option → adds it AND keeps remaining options visible
+   - Shows "ADD MORE:" label with remaining options still clickable
+   - Each added item has an "undo" link next to it
+   - Can add all 3 options or any combination
+
+2. BLUEPRINT ALWAYS SHOWS ON COMPLETION
+   - "BUILD MY BLUEPRINT" always shows blueprint screen first
+   - Blueprint screen has "START ACADEMY → DEPLOY & IMPROVE" button
+   - That button then hands off to the Academy
+   - User never skips past the blueprint again
+
+3. SYSTEMS STEP — SIMPLEST FIRST ENFORCED
+   - Coach prompt now explicitly says: Box/Google Drive/shared folder FIRST
+   - Only suggest Procore, Salesforce, Slack etc. if user mentioned them
+   - No more complex API suggestions by default
+
+4. DOCUMENT LIBRARY MESSAGING
+   - Upload panels now say "uploaded once — lives in agent's permanent
+     document library — available every run automatically"
+
+5. ALL PLACEHOLDER TEXT NOW GENERIC
+   - No construction-specific examples in placeholders
+   - Zero hardcoded industry specifics outside getDomainContext()
+
+6. TEMPLATE FIELD CATEGORIZATION
+   - Template upload now categorizes fields into 3 buckets:
+     CYAN = fields extracted from source document (qty, items, prices)
+     GOLD = fields user provides manually (job number, codes, approver)
+     GREY = fields agent computes (totals, page numbers)
+   - All subsequent coach prompts use these categories for accuracy
+
+=============================================
+APP.JSX INTEGRATION:
+=============================================
+
+Import both components:
+  import SmartIntake from './components/SmartIntake'
+  import PreviewSandbox from './components/PreviewSandbox'
+
+State:
+  const [agentData, setAgentData] = useState(null)
+  const [currentStep, setCurrentStep] = useState(0)
+
+Layout (responsive):
+  <div style={{
+    display: "flex",
+    flexDirection: window.innerWidth < 768 ? "column" : "row",
+    minHeight: "100vh"
+  }}>
+    <div style={{ flex: window.innerWidth < 768 ? "none" : "0 0 60%" }}>
+      <SmartIntake onComplete={(data) => setAgentData(data)} />
+    </div>
+    <div style={{
+      flex: window.innerWidth < 768 ? "none" : "0 0 40%",
+      borderTop: window.innerWidth < 768 ? "2px solid #182430" : "none",
+      borderLeft: window.innerWidth < 768 ? "none" : "2px solid #182430",
+      minHeight: window.innerWidth < 768 ? "500px" : "100vh"
+    }}>
+      <PreviewSandbox agentData={agentData} currentStep={currentStep} />
+    </div>
+  </div>
+
+=============================================
+BUILD & DEPLOY:
+=============================================
+
+npm install
+npm run build
+vercel --prod
+
+Report URL + screenshot of step 1 via Telegram.
+If integration errors, send current App.jsx to Claude first.

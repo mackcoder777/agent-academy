@@ -37,7 +37,7 @@ const readFileAsText = (file) => new Promise((resolve, reject) => {
 });
 
 const callClaude = async (messages, system, max_tokens) => {
-  const res = await fetch("/api/claude", {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -193,7 +193,7 @@ Return ONLY valid JSON (no markdown):
         {missingSteps.length > 0 && (
           <div style={{ background: C.dim, border: "1px solid " + C.gold + "33", borderRadius: "7px", padding: "0.55rem 0.7rem", marginBottom: "0.75rem" }}>
             <div style={{ fontFamily: "monospace", fontSize: "0.5rem", color: C.gold, marginBottom: "0.3rem" }}>COMPLETE THESE TO IMPROVE RESULTS</div>
-            {missingSteps.map((s, i) => <div key={i} style={{ fontFamily: "monospace", fontSize: "0.58rem", color: "#8A9AAA", display: "flex", gap: "0.35rem" }}><span style={{ color: C.gold }}>{"→"}</span>{s}</div>)}
+            {missingSteps.map((s, i) => <div key={i} style={{ fontFamily: "monospace", fontSize: "0.58rem", color: "#8A9AAA", display: "flex", gap: "0.35rem" }}><span style={{ color: C.gold }}>-></span>{s}</div>)}
           </div>
         )}
         {!hasDefinition ? (
@@ -216,7 +216,7 @@ Return ONLY valid JSON (no markdown):
               style={{ width: "100%", background: C.card, border: "1px solid " + C.border, borderRadius: "8px", padding: "0.7rem 0.8rem", color: C.text, fontFamily: "monospace", fontSize: "0.7rem", lineHeight: 1.65, resize: "none", outline: "none", marginBottom: "0.65rem" }} />
             <button onClick={runPreview} disabled={loading || (!input.trim() && !fileB64)}
               style={{ width: "100%", background: (loading || (!input.trim() && !fileB64)) ? C.dim : "linear-gradient(135deg," + C.accent + "," + C.gold + ")", border: "none", borderRadius: "8px", padding: "0.7rem", color: (loading || (!input.trim() && !fileB64)) ? C.muted : "#000", fontFamily: "monospace", fontSize: "0.65rem", fontWeight: 700, cursor: (loading || (!input.trim() && !fileB64)) ? "not-allowed" : "pointer", marginBottom: "0.85rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}>
-              {loading ? <><span style={{ display: "inline-block", animation: "spin 1s linear infinite" }}>o</span> Running agent preview...</> : "RUN PREVIEW →"}
+              {loading ? <><span style={{ display: "inline-block", animation: "spin 1s linear infinite" }}>o</span> Running agent preview...</> : "RUN PREVIEW ->"}
             </button>
             {error && <div style={{ background: C.error + "15", border: "1px solid " + C.error + "44", borderRadius: "6px", padding: "0.5rem 0.7rem", marginBottom: "0.65rem" }}><div style={{ fontFamily: "monospace", fontSize: "0.6rem", color: C.error }}>{error}</div></div>}
             {result && (
@@ -230,7 +230,7 @@ Return ONLY valid JSON (no markdown):
                   <div style={{ marginBottom: "0.65rem" }}>
                     <div style={{ fontFamily: "monospace", fontSize: "0.5rem", color: C.gold, marginBottom: "0.2rem" }}>COMPLETE MORE STEPS TO IMPROVE</div>
                     <div style={{ background: C.code, border: "1px solid " + C.dim, borderRadius: "6px", padding: "0.55rem 0.7rem" }}>
-                      {result.gaps.map((g, i) => <div key={i} style={{ display: "flex", gap: "0.4rem", marginBottom: "0.2rem" }}><span style={{ color: C.gold, fontFamily: "monospace", fontSize: "0.6rem" }}>{"→"}</span><span style={{ fontFamily: "monospace", fontSize: "0.62rem", color: "#A0B8C8", lineHeight: 1.55 }}>{g}</span></div>)}
+                      {result.gaps.map((g, i) => <div key={i} style={{ display: "flex", gap: "0.4rem", marginBottom: "0.2rem" }}><span style={{ color: C.gold, fontFamily: "monospace", fontSize: "0.6rem" }}>-></span><span style={{ fontFamily: "monospace", fontSize: "0.62rem", color: "#A0B8C8", lineHeight: 1.55 }}>{g}</span></div>)}
                     </div>
                   </div>
                 )}
