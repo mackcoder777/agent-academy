@@ -1921,26 +1921,9 @@ export default function AgentAcademy() {
 
   const tierModules = (tid) => MODULES.filter(m => m.tier === tid);
 
-  // If intake not complete, show SmartIntake + PreviewSandbox layout
+  // If intake not complete, show SmartIntake (it handles its own layout with position:fixed modal)
   if (showIntake && !intakeComplete) {
-    return (
-      <div style={{ fontFamily: "'Inter',sans-serif", background: C.bg, minHeight: "100vh", color: C.text }}>
-        <style>{`
-          @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-          *{box-sizing:border-box} ::-webkit-scrollbar{width:3px} ::-webkit-scrollbar-thumb{background:${C.border};border-radius:2px}
-          @keyframes spin{to{transform:rotate(360deg)}}
-          @media (max-width: 1024px) { .intake-layout { flex-direction: column !important; } .preview-panel { flex: 1 1 100% !important; max-width: 100% !important; height: auto !important; position: relative !important; border-left: none !important; border-top: 1px solid ${C.border} !important; } }
-        `}</style>
-        <div className="intake-layout" style={{ display: "flex", minHeight: "100vh" }}>
-          <div style={{ flex: "0 0 60%", maxWidth: "60%", overflow: "auto" }}>
-            <SmartIntake onComplete={(data) => { setAgentData(data); setIntakeComplete(true); }} />
-          </div>
-          <div className="preview-panel" style={{ flex: "0 0 40%", maxWidth: "40%", borderLeft: `1px solid ${C.border}`, overflow: "auto", position: "sticky", top: 0, height: "100vh" }}>
-            <PreviewSandbox agentData={agentData} currentStep={intakeStep} />
-          </div>
-        </div>
-      </div>
-    );
+    return <SmartIntake onComplete={(data) => { setAgentData(data); setIntakeComplete(true); }} />;
   }
 
   return (
