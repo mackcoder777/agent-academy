@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 
-// ─── Design tokens (same system as SmartIntake) ───────────────────────────
 const C = {
   bg: "#06080B", surface: "#0B0F16", card: "#0F1720", border: "#182430",
   accent: "#F97316", gold: "#F59E0B", text: "#DCE8F0", muted: "#3D5568",
@@ -8,19 +7,13 @@ const C = {
   purple: "#A78BFA", error: "#EF4444",
 };
 
-// ─── Helpers ──────────────────────────────────────────────────────────────
 const uuid = () => ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g,c=>(c^crypto.getRandomValues(new Uint8Array(1))[0]&15>>c/4).toString(16));
 
 const callClaude = async (messages, system, max_tokens = 1000) => {
   const res = await fetch("/api/claude", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens,
-      messages,
-      ...(system ? { system } : {}),
-    }),
+    body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens, messages, ...(system ? { system } : {}) }),
   });
   if (!res.ok) throw new Error("API " + res.status);
   const d = await res.json();
@@ -39,194 +32,145 @@ const readFileAsText = (file) => new Promise((resolve, reject) => {
   const r = new FileReader();
   r.onload = e => resolve(e.target.result);
   r.onerror = reject;
-  if (file.type === "application/pdf") r.readAsDataURL(file);
-  else r.readAsText(file);
+  file.type === "application/pdf" ? r.readAsDataURL(file) : r.readAsText(file);
 });
 
-const fmtDuration = ms => ms < 1000 ? ms + "ms" : (ms / 1000).toFixed(1) + "s";
-const fmtCost = tokens => "$" + ((tokens || 0) * 0.000003).toFixed(4);
+const fmtDuration = ms => ms < 1000 ? ms + "ms" : (ms/1000).toFixed(1) + "s";
+const fmtCost = tokens => "$" + ((tokens||0)*0.000003).toFixed(4);
 const fmtTime = ts => new Date(ts).toLocaleString([], { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" });
 
-// ─── Normalize agentData from SmartIntake v5 or v6 format ────────────────
-const normalizeBlueprint = (raw) => {
-  if (!raw) return null;
-  if (raw.agent_id && raw.runtime_inputs) return raw;
+// ─── Normalize blueprint from SmartIntake output ──────────────────────────────
+const normalizeBlueprint = (agentData) => {
+  if (!agentData) return null;
+  const cls = agentData.classification || {};
+  const ta = agentData.templateAnalysis || {};
   return {
-    agent_id: uuid(),
-    agent_name: raw.agentName || raw.name || "My Agent",
-    industry: raw.industry || "general",
-    workflow_type: raw.workflow_type || "document_processor",
-    agent_class: raw.agent_class || "document_processor",
-    complexity: raw.complexity || "medium",
-    concept: raw.concept || "",
-    trigger: { type: "manual_upload", accepted_formats: ["pdf","txt","csv","docx","xlsx"] },
-    runtime_inputs: [{ name: "input_document", type: "file", required: true }],
-    standing_context: raw.crossReference || raw.knowledge ? [
-      raw.crossReference && { name: "cross_reference", category: "crossref", description: raw.crossReference },
-      raw.knowledge && { name: "knowledge_base", category: "reference_data", description: raw.knowledge },
-    ].filter(Boolean) : [],
-    output: {
-      format: "structured_output",
-      description: raw.outputs || "",
-    },
-    human_gates: raw.constraints ? [{ trigger: raw.constraints, action: "pause_and_notify" }] : [],
-    system_prompt: { role: "", constraints: [] },
-    failure_handling: { unreadable_document: "pause_and_notify", low_confidence: "flag_and_continue" },
-    observability: { log_every_run: true },
-    pricing: { free_runs: 1 },
-    _raw: raw,
+    agent_name: agentData.agentName || agentData.agent_name || "My Agent",
+    workflow_type: cls.workflow_type || "document_processor",
+    output_is_form: cls.output_is_form || false,
+    concept: agentData.concept || "",
+    runtime_inputs: agentData.inputs || (cls.output_is_form ? "vendor quote documents" : "input documents"),
+    output_description: agentData.outputs || (cls.output_is_form && agentData.template ? "completed " + agentData.template.split("—")[0].trim() : ""),
+    template_name: agentData.templateFile?.name || null,
+    template_summary: ta.summary || null,
+    template_fields: ta.fields || [],
+    auto_fillable: ta.auto_fillable || [],
+    required_user_inputs: ta.required_user_inputs || [],
+    human_gates: agentData.humanGate || "",
+    _raw: agentData,
   };
 };
 
-// ─── Build system prompt for execution from blueprint ─────────────────────
-const buildSystemPromptFromBlueprint = (bp) => {
-  const parts = [];
-  parts.push(`You are ${bp.agent_name} — a specialized AI agent.`);
+// ─── Build system prompt from blueprint ───────────────────────────────────────
+const buildSystemPrompt = (bp) => {
+  const isForm = bp.output_is_form;
+  const parts = [`You are ${bp.agent_name} — a specialized AI agent.`];
   if (bp.concept) parts.push(`\nWHAT YOU DO: ${bp.concept}`);
-  if (bp.output?.description) parts.push(`\nOUTPUT: ${bp.output.description}`);
-  if (bp.system_prompt?.role) parts.push(`\nROLE: ${bp.system_prompt.role}`);
-  if (bp.system_prompt?.constraints?.length) {
-    parts.push(`\nRULES:\n${bp.system_prompt.constraints.map(c => "- " + c).join("\n")}`);
+
+  if (isForm && bp.template_fields.length > 0) {
+    parts.push(`\nOUTPUT FORM: You fill out a form with these fields: ${bp.template_fields.join(", ")}`);
+    if (bp.auto_fillable.length > 0) parts.push(`AUTO-FILL FROM SOURCE: ${bp.auto_fillable.join(", ")}`);
+    if (bp.required_user_inputs.length > 0) parts.push(`USER-PROVIDED FIELDS: ${bp.required_user_inputs.join(", ")} (user supplies these — they are NOT in the source document)`);
+  } else if (bp.output_description) {
+    parts.push(`\nOUTPUT: ${bp.output_description}`);
   }
-  if (bp.human_gates?.length) {
-    parts.push(`\nHUMAN OVERSIGHT: Flag for human review when: ${bp.human_gates.map(g => g.trigger || g.action).join("; ")}`);
-  }
-  parts.push(`
-Process the runtime input provided and return ONLY valid JSON with this exact structure:
+
+  if (bp.human_gates) parts.push(`\nHUMAN OVERSIGHT: ${bp.human_gates}`);
+
+  parts.push(`\nProcess the runtime input provided. Return ONLY valid JSON:
 {
-  "detected": "one sentence: what type of content or document this is",
-  "extracted": { "field_name": "value found", "field_name_2": "value found" },
-  "analysis": "2-4 sentences of plain English analysis and reasoning — what you found and what it means",
-  "output": "the full formatted output this agent produces — be specific and complete, include actual values from the input",
-  "confidence": 0.85,
-  "flags": ["any issues, conflicts, missing data, or items needing human review — empty array if none"],
-  "next_steps": ["what the human operator should do with this output"]
+  "detected": "one sentence: what type of document or content this is",
+  "extracted": { "field_name": "value_found" },
+  "output": "the full formatted output — use actual values, never placeholders",
+  "field_results": [{"field": "form field name", "value": "extracted or computed value", "source": "auto|user_provided|computed", "confidence": 0.95}],
+  "missing_fields": ["field name if it could not be filled"],
+  "flags": ["any issues needing human review — empty array if none"],
+  "confidence": 0.92
 }
 
-Be specific. Use actual values from the input. Never use placeholders.`);
-  return parts.join("");
+Rules:
+- Use actual values from the input — never placeholders
+- For form-filling: populate field_results for every field in the form
+- Mark fields as "user_provided" if they came from the user-supplied context, not the source doc
+- Flag anything with confidence below 0.8
+- missing_fields: list any required fields that could not be found anywhere`);
+
+  return parts.join("\n");
 };
 
-// ─── LAUNCH SEQUENCE ─────────────────────────────────────────────────────
+// ─── LAUNCH SCREEN ────────────────────────────────────────────────────────────
 const LAUNCH_STEPS = [
   { label: "Compiling blueprint", detail: "Normalizing agent specification..." },
-  { label: "Building your agent", detail: "Generating execution layer from blueprint..." },
-  { label: "Initializing memory", detail: "Setting up run logging and state persistence..." },
-  { label: "Deploying", detail: "Agent going live on execution infrastructure..." },
+  { label: "Building execution layer", detail: "Generating system prompt from blueprint..." },
+  { label: "Configuring form mapping", detail: "Setting up field extraction rules..." },
+  { label: "Deploying", detail: "Agent going live..." },
 ];
 
 function LaunchScreen({ agentData, onLaunched }) {
   const [phase, setPhase] = useState(0);
   const [error, setError] = useState("");
-  const bp = useRef(null);
-  const systemPrompt = useRef("");
+  const bpRef = useRef(null);
+  const spRef = useRef("");
 
   useEffect(() => {
     const run = async () => {
       try {
-        await new Promise(r => setTimeout(r, 600));
-        bp.current = normalizeBlueprint(agentData);
+        await new Promise(r => setTimeout(r, 400));
+        bpRef.current = normalizeBlueprint(agentData);
         setPhase(1);
 
+        // Generate optimized system prompt
         const raw = agentData?._raw || agentData;
-        const context = [
+        const ctx = [
           raw?.concept && "CONCEPT: " + raw.concept,
           raw?.inputs && "READS: " + raw.inputs,
           raw?.outputs && "PRODUCES: " + raw.outputs,
-          raw?.systems && "SYSTEMS: " + raw.systems,
-          raw?.constraints && "HUMAN GATES: " + raw.constraints,
+          raw?.templateAnalysis?.fields && "FORM FIELDS: " + raw.templateAnalysis.fields.join(", "),
+          raw?.templateAnalysis?.required_user_inputs && "USER PROVIDES: " + raw.templateAnalysis.required_user_inputs.join(", "),
+          raw?.templateAnalysis?.auto_fillable && "AUTO-FILL FROM SOURCE: " + raw.templateAnalysis.auto_fillable.join(", "),
+          raw?.humanGate && "HUMAN GATES: " + raw.humanGate,
         ].filter(Boolean).join("\n");
 
-        const promptGen = await callClaude([{
-          role: "user",
-          content: `You are generating the execution system prompt for an AI agent.
-
-Blueprint:
-${context || JSON.stringify(bp.current, null, 2).slice(0, 1000)}
-
-Generate a precise, production-ready system prompt for this agent. Include:
-1. Clear role definition (one sentence)
-2. Core capabilities and what it handles
-3. Output quality standards
-4. Edge case handling instructions
-5. What to flag for human review
-
-Return ONLY the system prompt text. No preamble. No JSON. Plain text.`
-        }], "", 600);
-
-        systemPrompt.current = promptGen || buildSystemPromptFromBlueprint(bp.current);
+        const generated = await callClaude([{ role: "user", content: `Generate a production system prompt for this AI agent.\n\nBlueprint:\n${ctx}\n\nInclude: role, capabilities, field extraction rules, what to flag for human review.\nReturn ONLY the system prompt text. No preamble.` }], "", 600);
+        spRef.current = generated || buildSystemPrompt(bpRef.current);
         setPhase(2);
 
-        await new Promise(r => setTimeout(r, 500));
+        await new Promise(r => setTimeout(r, 400));
         setPhase(3);
-
-        await new Promise(r => setTimeout(r, 900));
+        await new Promise(r => setTimeout(r, 600));
         setPhase(4);
-
-        setTimeout(() => onLaunched(bp.current, systemPrompt.current), 600);
+        setTimeout(() => onLaunched(bpRef.current, spRef.current), 500);
       } catch (e) {
-        setError("Launch failed: " + e.message + ". Check your API connection.");
+        setError("Launch failed: " + e.message);
       }
     };
     run();
   }, []);
 
   return (
-    <div style={{
-      position: "fixed", inset: 0, background: C.bg,
-      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-      fontFamily: "'Syne', sans-serif", zIndex: 1000,
-    }}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&display=swap');
-        @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.3} }
-        @keyframes live { 0%{box-shadow:0 0 0 0 #22C55E44}100%{box-shadow:0 0 0 12px transparent} }
-      `}</style>
-
+    <div style={{ position: "fixed", inset: 0, background: C.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontFamily: "'Syne', sans-serif", zIndex: 1000 }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&display=swap'); @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}} @keyframes live{0%{box-shadow:0 0 0 0 #22C55E44}100%{box-shadow:0 0 0 12px transparent}}`}</style>
       <div style={{ width: "100%", maxWidth: "480px", padding: "2rem" }}>
         <div style={{ marginBottom: "2.5rem" }}>
-          <div style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.muted, letterSpacing: "0.1em", marginBottom: "0.35rem" }}>
-            AGENT ACADEMY — DEPLOYING
-          </div>
-          <div style={{ fontWeight: 800, fontSize: "1.8rem", color: C.text, lineHeight: 1.1 }}>
-            {(agentData?.agentName || agentData?.agent_name || "Your Agent")}
-          </div>
+          <div style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.muted, letterSpacing: "0.1em", marginBottom: "0.35rem" }}>AGENT ACADEMY — DEPLOYING</div>
+          <div style={{ fontWeight: 800, fontSize: "1.8rem", color: C.text, lineHeight: 1.1 }}>{agentData?.agentName || agentData?.agent_name || "Your Agent"}</div>
         </div>
-
         <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", marginBottom: "2rem" }}>
           {LAUNCH_STEPS.map((s, i) => {
-            const done = phase > i;
-            const active = phase === i;
+            const done = phase > i; const active = phase === i;
             return (
-              <div key={i} style={{
-                display: "flex", alignItems: "center", gap: "0.85rem",
-                opacity: done || active ? 1 : 0.3,
-                transition: "opacity 0.4s ease",
-              }}>
-                <div style={{
-                  width: "20px", height: "20px", borderRadius: "50%", flexShrink: 0,
-                  background: done ? C.success : active ? C.gold + "33" : C.dim,
-                  border: "2px solid " + (done ? C.success : active ? C.gold : C.border),
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  animation: active ? "pulse 1.2s ease infinite" : "none",
-                }}>
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.85rem", opacity: done || active ? 1 : 0.3, transition: "opacity 0.4s" }}>
+                <div style={{ width: "20px", height: "20px", borderRadius: "50%", flexShrink: 0, background: done ? C.success : active ? C.gold + "33" : C.dim, border: "2px solid " + (done ? C.success : active ? C.gold : C.border), display: "flex", alignItems: "center", justifyContent: "center", animation: active ? "pulse 1.2s ease infinite" : "none" }}>
                   {done && <span style={{ color: C.success, fontSize: "0.6rem", fontWeight: 700 }}>✓</span>}
                 </div>
                 <div>
-                  <div style={{ fontFamily: "monospace", fontSize: "0.7rem", color: done ? C.text : active ? C.gold : C.muted, fontWeight: done ? 600 : 400 }}>
-                    {s.label}
-                  </div>
-                  {active && (
-                    <div style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.muted, marginTop: "0.1rem" }}>
-                      {s.detail}
-                    </div>
-                  )}
+                  <div style={{ fontFamily: "monospace", fontSize: "0.7rem", color: done ? C.text : active ? C.gold : C.muted, fontWeight: done ? 600 : 400 }}>{s.label}</div>
+                  {active && <div style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.muted, marginTop: "0.1rem" }}>{s.detail}</div>}
                 </div>
               </div>
             );
           })}
         </div>
-
         {phase >= 4 && (
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.85rem 1.1rem", background: C.success + "0F", border: "1px solid " + C.success + "44", borderRadius: "10px" }}>
             <div style={{ width: "10px", height: "10px", borderRadius: "50%", background: C.success, animation: "live 1.5s ease infinite" }} />
@@ -236,223 +180,246 @@ Return ONLY the system prompt text. No preamble. No JSON. Plain text.`
             </div>
           </div>
         )}
-
-        {error && (
-          <div style={{ background: C.error + "15", border: "1px solid " + C.error + "44", borderRadius: "8px", padding: "0.75rem 1rem", marginTop: "1rem" }}>
-            <div style={{ fontFamily: "monospace", fontSize: "0.62rem", color: C.error }}>{error}</div>
-          </div>
-        )}
-
+        {error && <div style={{ background: C.error + "15", border: "1px solid " + C.error + "44", borderRadius: "8px", padding: "0.75rem 1rem", marginTop: "1rem" }}><div style={{ fontFamily: "monospace", fontSize: "0.62rem", color: C.error }}>{error}</div></div>}
         <div style={{ marginTop: "2rem", height: "3px", background: C.dim, borderRadius: "2px", overflow: "hidden" }}>
-          <div style={{
-            width: (phase / 4 * 100) + "%", height: "100%",
-            background: phase >= 4 ? C.success : "linear-gradient(90deg," + C.accent + "," + C.gold + ")",
-            borderRadius: "2px", transition: "width 0.8s ease, background 0.4s ease",
-          }} />
+          <div style={{ width: (phase/4*100) + "%", height: "100%", background: phase >= 4 ? C.success : "linear-gradient(90deg," + C.accent + "," + C.gold + ")", borderRadius: "2px", transition: "width 0.8s ease" }} />
         </div>
       </div>
     </div>
   );
 }
 
-// ─── OUTPUT DISPLAY ───────────────────────────────────────────────────────
-function OutputDisplay({ result, compact }) {
-  const confColor = result.confidence >= 0.8 ? C.success : result.confidence >= 0.6 ? C.gold : C.error;
+// ─── PRE-RUN USER INPUT ───────────────────────────────────────────────────────
+// Collects user-provided fields (GL account, project number, etc.) before running
+function PreRunInputs({ fields, values, onChange }) {
+  if (!fields || fields.length === 0) return null;
+  return (
+    <div style={{ background: C.gold + "0A", border: "1px solid " + C.gold + "33", borderRadius: "10px", padding: "0.85rem 1rem", marginBottom: "0.75rem" }}>
+      <div style={{ fontFamily: "monospace", fontSize: "0.5rem", color: C.gold, letterSpacing: "0.07em", marginBottom: "0.5rem" }}>
+        FIELDS YOU'LL PROVIDE — these won't be in the vendor quote
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+        {fields.map((field, i) => (
+          <div key={i}>
+            <div style={{ fontFamily: "monospace", fontSize: "0.55rem", color: C.muted, marginBottom: "0.2rem" }}>{field}</div>
+            <input
+              value={values[field] || ""}
+              onChange={e => onChange(field, e.target.value)}
+              placeholder={"Enter " + field.toLowerCase() + "..."}
+              style={{ width: "100%", background: C.card, border: "1px solid " + C.border, borderRadius: "6px", padding: "0.45rem 0.65rem", color: C.text, fontFamily: "monospace", fontSize: "0.65rem", outline: "none" }}
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── OUTPUT DISPLAY ───────────────────────────────────────────────────────────
+function OutputDisplay({ result, blueprint, compact }) {
+  const confColor = (result.confidence || 0.85) >= 0.8 ? C.success : (result.confidence || 0.85) >= 0.6 ? C.gold : C.error;
+  const isForm = blueprint?.output_is_form;
+  const fieldResults = result.field_results || [];
+  const missingFields = result.missing_fields || [];
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.25rem" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div style={{ fontFamily: "monospace", fontSize: "0.5rem", color: C.success, letterSpacing: "0.08em" }}>✓ RUN COMPLETE</div>
-        <div style={{ fontFamily: "monospace", fontSize: "0.6rem", color: confColor, fontWeight: 700 }}>
-          {Math.round((result.confidence || 0.85) * 100)}% confidence
-        </div>
+        <div style={{ fontFamily: "monospace", fontSize: "0.6rem", color: confColor, fontWeight: 700 }}>{Math.round((result.confidence || 0.85) * 100)}% confidence</div>
       </div>
 
       {result.detected && (
         <div style={{ background: C.dim, borderRadius: "6px", padding: "0.55rem 0.75rem" }}>
-          <div style={{ fontFamily: "monospace", fontSize: "0.48rem", color: C.cyan, letterSpacing: "0.07em", marginBottom: "0.2rem" }}>DETECTED</div>
+          <div style={{ fontFamily: "monospace", fontSize: "0.47rem", color: C.cyan, letterSpacing: "0.07em", marginBottom: "0.2rem" }}>DETECTED</div>
           <div style={{ fontFamily: "monospace", fontSize: "0.65rem", color: C.text }}>{result.detected}</div>
         </div>
       )}
 
-      {result.extracted && Object.keys(result.extracted).length > 0 && (
+      {/* Form-filling: show field-by-field table */}
+      {isForm && fieldResults.length > 0 && (
         <div style={{ background: C.dim, borderRadius: "6px", padding: "0.55rem 0.75rem" }}>
-          <div style={{ fontFamily: "monospace", fontSize: "0.48rem", color: C.purple, letterSpacing: "0.07em", marginBottom: "0.35rem" }}>EXTRACTED</div>
+          <div style={{ fontFamily: "monospace", fontSize: "0.47rem", color: C.purple, letterSpacing: "0.07em", marginBottom: "0.4rem" }}>FORM FIELDS FILLED</div>
           <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
-            {Object.entries(result.extracted).slice(0, compact ? 4 : 20).map(([k, v]) => (
-              <div key={k} style={{ display: "flex", gap: "0.5rem" }}>
-                <span style={{ fontFamily: "monospace", fontSize: "0.55rem", color: C.purple, flexShrink: 0, minWidth: "120px" }}>{k}:</span>
-                <span style={{ fontFamily: "monospace", fontSize: "0.58rem", color: C.text, lineHeight: 1.5 }}>{String(v)}</span>
+            {(compact ? fieldResults.slice(0, 5) : fieldResults).map((fr, i) => (
+              <div key={i} style={{ display: "flex", gap: "0.5rem", alignItems: "baseline" }}>
+                <span style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.muted, flexShrink: 0, minWidth: "120px" }}>{fr.field}:</span>
+                <span style={{ fontFamily: "monospace", fontSize: "0.6rem", color: fr.source === "user_provided" ? C.gold : C.text, flex: 1 }}>{fr.value || "—"}</span>
+                <span style={{ fontFamily: "monospace", fontSize: "0.44rem", color: (fr.confidence || 1) >= 0.8 ? "#2A5A3A" : C.gold, flexShrink: 0 }}>
+                  {fr.source === "user_provided" ? "you" : Math.round((fr.confidence || 0.95) * 100) + "%"}
+                </span>
               </div>
             ))}
+            {compact && fieldResults.length > 5 && <div style={{ fontFamily: "monospace", fontSize: "0.47rem", color: C.muted }}>+{fieldResults.length - 5} more fields</div>}
           </div>
+          {missingFields.length > 0 && (
+            <div style={{ marginTop: "0.5rem", borderTop: "1px solid " + C.border, paddingTop: "0.4rem" }}>
+              <div style={{ fontFamily: "monospace", fontSize: "0.47rem", color: C.error, marginBottom: "0.2rem" }}>COULD NOT FILL:</div>
+              {missingFields.map((f, i) => <div key={i} style={{ fontFamily: "monospace", fontSize: "0.55rem", color: C.error }}>· {f}</div>)}
+            </div>
+          )}
         </div>
       )}
 
-      {result.analysis && !compact && (
+      {/* Non-form: show extracted key-values */}
+      {!isForm && result.extracted && Object.keys(result.extracted).length > 0 && (
         <div style={{ background: C.dim, borderRadius: "6px", padding: "0.55rem 0.75rem" }}>
-          <div style={{ fontFamily: "monospace", fontSize: "0.48rem", color: C.gold, letterSpacing: "0.07em", marginBottom: "0.2rem" }}>ANALYSIS</div>
-          <div style={{ fontFamily: "monospace", fontSize: "0.65rem", color: "#B8D0DC", lineHeight: 1.65 }}>{result.analysis}</div>
+          <div style={{ fontFamily: "monospace", fontSize: "0.47rem", color: C.purple, letterSpacing: "0.07em", marginBottom: "0.35rem" }}>EXTRACTED</div>
+          {Object.entries(result.extracted).slice(0, compact ? 4 : 20).map(([k, v]) => (
+            <div key={k} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.15rem" }}>
+              <span style={{ fontFamily: "monospace", fontSize: "0.55rem", color: C.purple, flexShrink: 0, minWidth: "110px" }}>{k}:</span>
+              <span style={{ fontFamily: "monospace", fontSize: "0.58rem", color: C.text }}>{String(v)}</span>
+            </div>
+          ))}
         </div>
       )}
 
+      {/* Output text */}
       {result.output && (
         <div style={{ background: C.code, border: "1px solid " + C.accent + "33", borderRadius: "6px", padding: "0.65rem 0.75rem" }}>
-          <div style={{ fontFamily: "monospace", fontSize: "0.48rem", color: C.accent, letterSpacing: "0.07em", marginBottom: "0.2rem" }}>OUTPUT</div>
+          <div style={{ fontFamily: "monospace", fontSize: "0.47rem", color: C.accent, letterSpacing: "0.07em", marginBottom: "0.2rem" }}>OUTPUT</div>
           <div style={{ fontFamily: "monospace", fontSize: "0.65rem", color: C.text, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
             {compact ? result.output.slice(0, 200) + (result.output.length > 200 ? "..." : "") : result.output}
           </div>
         </div>
       )}
 
+      {/* Flags */}
       {result.flags && result.flags.length > 0 && (
         <div style={{ background: C.gold + "0D", border: "1px solid " + C.gold + "33", borderRadius: "6px", padding: "0.55rem 0.75rem" }}>
-          <div style={{ fontFamily: "monospace", fontSize: "0.48rem", color: C.gold, letterSpacing: "0.07em", marginBottom: "0.2rem" }}>FLAGGED FOR REVIEW</div>
-          {result.flags.map((f, i) => (
-            <div key={i} style={{ display: "flex", gap: "0.4rem", marginBottom: "0.15rem" }}>
-              <span style={{ color: C.gold, flexShrink: 0, fontFamily: "monospace", fontSize: "0.55rem" }}>!</span>
-              <span style={{ fontFamily: "monospace", fontSize: "0.6rem", color: "#C8A820", lineHeight: 1.5 }}>{f}</span>
-            </div>
-          ))}
+          <div style={{ fontFamily: "monospace", fontSize: "0.47rem", color: C.gold, letterSpacing: "0.07em", marginBottom: "0.2rem" }}>FLAGGED FOR REVIEW</div>
+          {result.flags.map((f, i) => <div key={i} style={{ display: "flex", gap: "0.4rem", marginBottom: "0.15rem" }}><span style={{ color: C.gold, fontFamily: "monospace", fontSize: "0.55rem" }}>!</span><span style={{ fontFamily: "monospace", fontSize: "0.6rem", color: "#C8A820", lineHeight: 1.5 }}>{f}</span></div>)}
         </div>
       )}
     </div>
   );
 }
 
-// ─── STRIPE GATE MODAL ───────────────────────────────────────────────────
-function StripeGateModal({ agentName, onClose }) {
+// ─── STRIPE GATE ──────────────────────────────────────────────────────────────
+function StripeGate({ agentName, onClose }) {
   return (
-    <div style={{
-      position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 2000,
-      display: "flex", alignItems: "center", justifyContent: "center", padding: "1.5rem",
-    }}>
-      <div style={{
-        background: C.surface, border: "1px solid " + C.accent + "55",
-        borderRadius: "14px", width: "100%", maxWidth: "420px", padding: "2rem",
-      }}>
-        <div style={{ fontFamily: "monospace", fontSize: "0.5rem", color: C.accent, letterSpacing: "0.1em", marginBottom: "0.5rem" }}>
-          FREE RUN USED
-        </div>
-        <div style={{ fontWeight: 800, fontSize: "1.4rem", color: C.text, lineHeight: 1.2, marginBottom: "0.75rem" }}>
-          Your agent works.<br />Keep it running.
-        </div>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: "1.5rem" }}>
+      <div style={{ background: C.surface, border: "1px solid " + C.accent + "55", borderRadius: "14px", width: "100%", maxWidth: "420px", padding: "2rem" }}>
+        <div style={{ fontFamily: "monospace", fontSize: "0.5rem", color: C.accent, letterSpacing: "0.1em", marginBottom: "0.5rem" }}>FREE RUN USED</div>
+        <div style={{ fontWeight: 800, fontSize: "1.4rem", color: C.text, lineHeight: 1.2, marginBottom: "0.75rem" }}>Your agent works.<br />Keep it running.</div>
         <div style={{ fontFamily: "monospace", fontSize: "0.65rem", color: C.muted, lineHeight: 1.7, marginBottom: "1.5rem" }}>
           Your first run showed what {agentName} can do. Subscribe to keep it monitored, logged, and improving.
         </div>
         <div style={{ background: C.dim, borderRadius: "10px", padding: "1rem", marginBottom: "1.25rem" }}>
-          {["Unlimited runs","Full run history + monitoring","Failure alerts via email","Dashboard improvements queue","Agent revision and redeploy"].map((f, i) => (
+          {["Unlimited runs", "Full run history + monitoring", "Failure alerts via email", "Dashboard improvement queue", "Agent revision and redeploy"].map((f, i) => (
             <div key={i} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.3rem" }}>
               <span style={{ color: C.success, fontFamily: "monospace", fontSize: "0.6rem" }}>+</span>
               <span style={{ fontFamily: "monospace", fontSize: "0.63rem", color: C.text }}>{f}</span>
             </div>
           ))}
         </div>
-        <div style={{ fontFamily: "monospace", fontSize: "0.6rem", color: C.muted, textAlign: "center", marginBottom: "0.85rem" }}>
-          $199 / month — cancel anytime
-        </div>
-        <button
-          onClick={() => window.open("https://buy.stripe.com/agentacademy_placeholder", "_blank")}
-          style={{ width: "100%", background: "linear-gradient(135deg," + C.accent + "," + C.gold + ")", border: "none", borderRadius: "9px", padding: "0.85rem", color: "#000", fontFamily: "monospace", fontSize: "0.7rem", fontWeight: 800, cursor: "pointer", marginBottom: "0.5rem" }}
-        >
+        <div style={{ fontFamily: "monospace", fontSize: "0.6rem", color: C.muted, textAlign: "center", marginBottom: "0.85rem" }}>$199 / month — cancel anytime</div>
+        <button onClick={() => window.open("https://buy.stripe.com/agentacademy_placeholder", "_blank")}
+          style={{ width: "100%", background: "linear-gradient(135deg," + C.accent + "," + C.gold + ")", border: "none", borderRadius: "9px", padding: "0.85rem", color: "#000", fontFamily: "monospace", fontSize: "0.7rem", fontWeight: 800, cursor: "pointer", marginBottom: "0.5rem" }}>
           SUBSCRIBE — $199/mo →
         </button>
-        <button
-          onClick={onClose}
-          style={{ width: "100%", background: "transparent", border: "1px solid " + C.border, borderRadius: "9px", padding: "0.6rem", color: C.muted, fontFamily: "monospace", fontSize: "0.6rem", cursor: "pointer" }}
-        >
-          Maybe later
-        </button>
+        <button onClick={onClose} style={{ width: "100%", background: "transparent", border: "1px solid " + C.border, borderRadius: "9px", padding: "0.6rem", color: C.muted, fontFamily: "monospace", fontSize: "0.6rem", cursor: "pointer" }}>Maybe later</button>
       </div>
     </div>
   );
 }
 
-// ─── RUN HISTORY CARD ────────────────────────────────────────────────────
-function RunCard({ run, index }) {
+// ─── RUN CARD ─────────────────────────────────────────────────────────────────
+function RunCard({ run, index, blueprint }) {
   const [expanded, setExpanded] = useState(false);
   return (
     <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: "10px", overflow: "hidden", marginBottom: "0.5rem" }}>
       <div onClick={() => setExpanded(p => !p)} style={{ padding: "0.7rem 0.9rem", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flex: 1, minWidth: 0 }}>
-          <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: C.success, flexShrink: 0 }} />
+          <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: (run.result?.flags?.length || run.result?.missing_fields?.length) ? C.gold : C.success, flexShrink: 0 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontFamily: "monospace", fontSize: "0.62rem", color: C.text, marginBottom: "0.1rem" }}>Run #{index + 1} — {run.inputName || "Input"}</div>
-            <div style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.muted }}>{fmtTime(run.ts)} · {fmtDuration(run.duration)} · {fmtCost(run.tokens)}</div>
+            <div style={{ fontFamily: "monospace", fontSize: "0.62rem", color: C.text, marginBottom: "0.1rem" }}>
+              Run #{index + 1} — {run.inputName || "Input"}
+            </div>
+            <div style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.muted }}>
+              {fmtTime(run.ts)} · {fmtDuration(run.duration)} · {fmtCost(run.tokens)} · {Math.round((run.result?.confidence || 0.85) * 100)}% confidence
+            </div>
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexShrink: 0 }}>
           {run.isFree && <span style={{ fontFamily: "monospace", fontSize: "0.48rem", color: C.gold, background: C.gold + "22", padding: "0.1rem 0.5rem", borderRadius: "4px" }}>FREE</span>}
-          {run.flags?.length > 0 && <span style={{ fontFamily: "monospace", fontSize: "0.48rem", color: C.gold }}>! {run.flags.length} flag{run.flags.length > 1 ? "s" : ""}</span>}
+          {(run.result?.flags?.length > 0 || run.result?.missing_fields?.length > 0) && (
+            <span style={{ fontFamily: "monospace", fontSize: "0.48rem", color: C.gold }}>! review</span>
+          )}
           <span style={{ color: C.muted, fontFamily: "monospace", fontSize: "0.7rem" }}>{expanded ? "▴" : "▾"}</span>
         </div>
       </div>
       {expanded && (
         <div style={{ borderTop: "1px solid " + C.border, padding: "0.75rem 0.9rem" }}>
-          <OutputDisplay result={run.result} compact={false} />
+          <OutputDisplay result={run.result} blueprint={blueprint} compact={false} />
+          <button onClick={() => {
+            const blob = new Blob([JSON.stringify(run.result, null, 2)], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a"); a.href = url;
+            a.download = (blueprint?.agent_name || "agent").replace(/\s+/g, "_") + "_run" + (index+1) + ".json"; a.click();
+          }} style={{ marginTop: "0.5rem", background: "transparent", border: "1px solid " + C.success + "44", borderRadius: "6px", padding: "0.35rem 0.75rem", color: C.success, fontFamily: "monospace", fontSize: "0.55rem", cursor: "pointer" }}>
+            ↓ Download output
+          </button>
         </div>
       )}
     </div>
   );
 }
 
-// ─── IMPROVEMENT QUEUE ───────────────────────────────────────────────────
-function ImprovementQueue({ blueprint, runs }) {
+// ─── IMPROVE TAB ──────────────────────────────────────────────────────────────
+function ImproveTab({ blueprint, runs }) {
   const [improvements, setImprovements] = useState(null);
   const [loading, setLoading] = useState(false);
 
   const generate = async () => {
     setLoading(true);
     try {
-      const runSummary = runs.slice(-3).map((r, i) =>
-        `Run ${i + 1}: detected="${r.result?.detected || "unknown"}", confidence=${r.result?.confidence || 0.85}, flags=${JSON.stringify(r.result?.flags || [])}`
+      const summary = runs.slice(-3).map((r, i) =>
+        `Run ${i+1}: confidence=${r.result?.confidence||0.85}, missing=${JSON.stringify(r.result?.missing_fields||[])}, flags=${JSON.stringify(r.result?.flags||[])}`
       ).join("\n");
-      const raw = await callClaude([{
-        role: "user",
-        content: `Agent: "${blueprint?.agent_name}"\nConcept: "${blueprint?.concept || ""}"\nStanding context uploaded: ${blueprint?.standing_context?.length > 0 ? "yes" : "no"}\nRecent runs:\n${runSummary}\n\nGenerate 3 specific improvement suggestions for this agent. Return ONLY JSON:\n[\n  {"title": "Add X to improve Y", "description": "Plain English: what to add and how it improves results", "action": "upload|configure|edit", "impact": "high|medium"},\n  {"title": "...", "description": "...", "action": "...", "impact": "..."},\n  {"title": "...", "description": "...", "action": "...", "impact": "..."}\n]`
-      }], "", 600);
+      const raw = await callClaude([{ role: "user", content: `Agent: "${blueprint?.agent_name}"\nConcept: "${blueprint?.concept}"\nForm fields: ${blueprint?.template_fields?.join(", ") || "not specified"}\nUser-provided fields: ${blueprint?.required_user_inputs?.join(", ") || "none"}\nRecent runs:\n${summary}\n\nGenerate 3 specific improvements. Return ONLY JSON array:\n[{"title":"...","description":"plain English: what to add/change and exactly how it improves results","action":"upload|configure|edit","impact":"high|medium"}]` }], "", 500);
       const parsed = parseJSON(raw);
       if (Array.isArray(parsed)) setImprovements(parsed);
-    } catch (e) {}
+    } catch {}
     setLoading(false);
   };
 
-  useEffect(() => {
-    if (runs.length > 0 && !improvements) generate();
-  }, [runs.length]);
+  useEffect(() => { if (runs.length > 0 && !improvements) generate(); }, [runs.length]);
 
-  if (runs.length === 0) {
-    return (
-      <div style={{ textAlign: "center", padding: "2.5rem 1rem" }}>
-        <div style={{ fontFamily: "monospace", fontSize: "0.65rem", color: C.muted, lineHeight: 1.7 }}>
-          Run your agent first.<br />Improvement suggestions are generated from actual run patterns.
-        </div>
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "1.5rem 0" }}>
-        <span style={{ color: C.gold, fontFamily: "monospace", fontSize: "0.6rem" }}>○</span>
-        <span style={{ fontFamily: "monospace", fontSize: "0.6rem", color: C.gold }}>Analyzing your runs...</span>
-      </div>
-    );
-  }
-
+  if (runs.length === 0) return (
+    <div style={{ textAlign: "center", padding: "2.5rem 1rem" }}>
+      <div style={{ fontFamily: "monospace", fontSize: "0.65rem", color: C.muted, lineHeight: 1.7 }}>Run your agent first.<br />Improvement suggestions are generated from actual run patterns.</div>
+    </div>
+  );
+  if (loading) return <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "1.5rem 0" }}><span style={{ color: C.gold, fontFamily: "monospace", fontSize: "0.6rem" }}>○</span><span style={{ fontFamily: "monospace", fontSize: "0.6rem", color: C.gold }}>Analyzing your runs...</span></div>;
   if (!improvements) return null;
 
-  const impactColor = { high: C.success, medium: C.gold, low: C.muted };
-
+  const ic = { high: C.success, medium: C.gold };
   return (
     <div>
-      <div style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.muted, letterSpacing: "0.07em", marginBottom: "0.75rem" }}>
-        {improvements.length} IMPROVEMENTS · ranked by impact
+      {/* Blueprint summary */}
+      <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: "10px", padding: "0.85rem 1rem", marginBottom: "1rem" }}>
+        <div style={{ fontFamily: "monospace", fontSize: "0.5rem", color: C.muted, letterSpacing: "0.07em", marginBottom: "0.45rem" }}>AGENT DEFINITION</div>
+        {[
+          { label: "Does", value: blueprint?.concept },
+          { label: "Reads", value: blueprint?.runtime_inputs },
+          { label: "Produces", value: blueprint?.output_description || (blueprint?.output_is_form ? "Completed form" : null) },
+          { label: "Form fields", value: blueprint?.template_fields?.length > 0 ? blueprint.template_fields.slice(0, 6).join(", ") + (blueprint.template_fields.length > 6 ? "..." : "") : null },
+          { label: "You provide", value: blueprint?.required_user_inputs?.length > 0 ? blueprint.required_user_inputs.join(", ") : null },
+        ].filter(r => r.value).map((r, i) => (
+          <div key={i} style={{ display: "flex", gap: "0.6rem", marginBottom: "0.25rem" }}>
+            <span style={{ fontFamily: "monospace", fontSize: "0.5rem", color: C.accent, flexShrink: 0, minWidth: "70px", marginTop: "2px" }}>{r.label}</span>
+            <span style={{ fontFamily: "monospace", fontSize: "0.58rem", color: C.muted, lineHeight: 1.55 }}>{r.value}</span>
+          </div>
+        ))}
       </div>
+
+      <div style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.muted, letterSpacing: "0.07em", marginBottom: "0.75rem" }}>IMPROVEMENT QUEUE</div>
       {improvements.map((imp, i) => (
         <div key={i} style={{ background: C.card, border: "1px solid " + C.border, borderRadius: "10px", padding: "0.85rem 1rem", marginBottom: "0.5rem" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.4rem" }}>
             <div style={{ fontFamily: "monospace", fontSize: "0.65rem", color: C.text, fontWeight: 600, lineHeight: 1.4, flex: 1, paddingRight: "0.5rem" }}>{imp.title}</div>
-            <span style={{ fontFamily: "monospace", fontSize: "0.48rem", color: impactColor[imp.impact] || C.muted, background: (impactColor[imp.impact] || C.muted) + "22", padding: "0.1rem 0.5rem", borderRadius: "4px", flexShrink: 0 }}>{imp.impact} impact</span>
+            <span style={{ fontFamily: "monospace", fontSize: "0.48rem", color: ic[imp.impact] || C.muted, background: (ic[imp.impact] || C.muted) + "22", padding: "0.1rem 0.5rem", borderRadius: "4px", flexShrink: 0 }}>{imp.impact} impact</span>
           </div>
           <div style={{ fontFamily: "monospace", fontSize: "0.6rem", color: C.muted, lineHeight: 1.65, marginBottom: "0.55rem" }}>{imp.description}</div>
           <button style={{ background: "transparent", border: "1px solid " + C.accent + "44", borderRadius: "6px", padding: "0.35rem 0.75rem", color: C.accent, fontFamily: "monospace", fontSize: "0.55rem", cursor: "pointer" }}>
@@ -464,25 +431,33 @@ function ImprovementQueue({ blueprint, runs }) {
   );
 }
 
-// ─── MAIN DASHBOARD ───────────────────────────────────────────────────────
+// ─── MAIN DASHBOARD ───────────────────────────────────────────────────────────
 export default function AgentDashboard({ agentData, onBack }) {
   const [phase, setPhase] = useState("launching");
   const [blueprint, setBlueprint] = useState(null);
   const [systemPrompt, setSystemPrompt] = useState("");
+
   const [activeTab, setActiveTab] = useState("run");
   const [runs, setRuns] = useState([]);
   const [freeRunsUsed, setFreeRunsUsed] = useState(0);
-  const FREE_RUN_LIMIT = 1;
+  const FREE_LIMIT = 1;
+
   const [running, setRunning] = useState(false);
   const [currentResult, setCurrentResult] = useState(null);
   const [runError, setRunError] = useState("");
-  const [input, setInput] = useState("");
-  const [fileName, setFileName] = useState("");
+
+  // File input
+  const [inputFile, setInputFile] = useState(null);
+  const [inputText, setInputText] = useState("");
   const [fileB64, setFileB64] = useState(null);
   const [fileType, setFileType] = useState("");
   const [dragOver, setDragOver] = useState(false);
-  const [showStripeGate, setShowStripeGate] = useState(false);
   const fileRef = useRef(null);
+
+  // User-provided fields (GL account, project number, etc.)
+  const [userFieldValues, setUserFieldValues] = useState({});
+
+  const [showStripeGate, setShowStripeGate] = useState(false);
 
   const onLaunched = useCallback((bp, sp) => {
     setBlueprint(bp);
@@ -491,7 +466,7 @@ export default function AgentDashboard({ agentData, onBack }) {
   }, []);
 
   const handleFile = async (file) => {
-    setFileName(file.name);
+    setInputFile(file);
     setFileType(file.type);
     setCurrentResult(null);
     setRunError("");
@@ -499,76 +474,95 @@ export default function AgentDashboard({ agentData, onBack }) {
       const content = await readFileAsText(file);
       if (file.type === "application/pdf") {
         setFileB64(content.split(",")[1]);
-        setInput("[PDF: " + file.name + "]");
+        setInputText("[PDF: " + file.name + "]");
       } else {
         setFileB64(null);
-        setInput(content.substring(0, 5000));
+        setInputText(content.substring(0, 6000));
       }
-    } catch (e) {
-      setRunError("Could not read file: " + e.message);
-    }
+    } catch (e) { setRunError("Could not read file: " + e.message); }
   };
 
   const handleDrop = (e) => {
     e.preventDefault(); setDragOver(false);
-    const file = e.dataTransfer.files[0];
-    if (file) handleFile(file);
+    const f = e.dataTransfer.files[0];
+    if (f) handleFile(f);
   };
 
   const runAgent = async () => {
-    if (!input.trim() && !fileB64) return;
-    if (freeRunsUsed >= FREE_RUN_LIMIT) { setShowStripeGate(true); return; }
+    if (!inputText.trim() && !fileB64) return;
+    if (freeRunsUsed >= FREE_LIMIT) { setShowStripeGate(true); return; }
+
     setRunning(true); setRunError(""); setCurrentResult(null);
-    const startMs = Date.now();
+    const t0 = Date.now();
+
     try {
-      const effectiveSystem = systemPrompt || buildSystemPromptFromBlueprint(blueprint);
+      const sys = systemPrompt || buildSystemPrompt(blueprint);
+
+      // Add user-provided fields to the context
+      const requiredFields = blueprint?.required_user_inputs || [];
+      const userContext = requiredFields.length > 0 && Object.keys(userFieldValues).length > 0
+        ? "\n\nUSER-PROVIDED FIELDS FOR THIS RUN:\n" + requiredFields.map(f => `${f}: ${userFieldValues[f] || "(not provided)"}`).join("\n")
+        : "";
+
       let messages;
       if (fileB64 && fileType === "application/pdf") {
-        messages = [{ role: "user", content: [{ type: "document", source: { type: "base64", media_type: "application/pdf", data: fileB64 } }, { type: "text", text: "Process this document according to your specification. Return JSON only." }] }];
+        messages = [{ role: "user", content: [
+          { type: "document", source: { type: "base64", media_type: "application/pdf", data: fileB64 } },
+          { type: "text", text: "Process this document according to your specification." + userContext + "\n\nReturn JSON only." }
+        ]}];
       } else {
-        messages = [{ role: "user", content: "Process this input:\n\n" + (input.trim() || "File: " + fileName) + "\n\nReturn JSON only." }];
+        messages = [{ role: "user", content: "Process this input:\n\n" + inputText.trim() + userContext + "\n\nReturn JSON only." }];
       }
-      const raw = await callClaude(messages, effectiveSystem, 1200);
+
+      const raw = await callClaude(messages, sys, 1500);
       const parsed = parseJSON(raw);
-      const duration = Date.now() - startMs;
+      const dur = Date.now() - t0;
+
       if (parsed) {
-        const run = { id: uuid(), ts: Date.now(), inputName: fileName || "Pasted input", result: parsed, duration, tokens: Math.round(duration * 0.4), flags: parsed.flags || [], isFree: freeRunsUsed < FREE_RUN_LIMIT };
-        setCurrentResult(parsed); setRuns(p => [run, ...p]); setFreeRunsUsed(p => p + 1);
+        const run = {
+          id: uuid(), ts: Date.now(),
+          inputName: inputFile?.name || "Pasted input",
+          result: parsed, duration: dur,
+          tokens: Math.round(dur * 0.4),
+          flags: [...(parsed.flags || []), ...(parsed.missing_fields?.length > 0 ? ["Missing fields: " + parsed.missing_fields.join(", ")] : [])],
+          isFree: freeRunsUsed < FREE_LIMIT,
+        };
+        setCurrentResult(parsed);
+        setRuns(p => [run, ...p]);
+        setFreeRunsUsed(p => p + 1);
       } else {
-        setRunError("Could not parse agent output. Try again.");
+        setRunError("Could not parse output. Try again.");
       }
-    } catch (e) {
-      setRunError("Run failed: " + e.message);
-    }
+    } catch (e) { setRunError("Run failed: " + e.message); }
     setRunning(false);
   };
 
-  const clearRun = () => { setCurrentResult(null); setInput(""); setFileName(""); setFileB64(null); setFileType(""); setRunError(""); };
+  const clearRun = () => { setCurrentResult(null); setInputFile(null); setInputText(""); setFileB64(null); setFileType(""); setRunError(""); };
 
   if (phase === "launching") return <LaunchScreen agentData={agentData} onLaunched={onLaunched} />;
+  if (!blueprint) return null;
 
-  const agentName = blueprint?.agent_name || agentData?.agentName || "My Agent";
+  const agentName = blueprint.agent_name;
+  const isForm = blueprint.output_is_form;
   const totalRuns = runs.length;
   const successRate = totalRuns > 0 ? Math.round(runs.filter(r => !r.flags?.length).length / totalRuns * 100) : 100;
-  const avgDuration = totalRuns > 0 ? Math.round(runs.reduce((a, r) => a + r.duration, 0) / totalRuns) : 0;
+  const avgDur = totalRuns > 0 ? Math.round(runs.reduce((a, r) => a + r.duration, 0) / totalRuns) : 0;
   const avgCost = totalRuns > 0 ? runs.reduce((a, r) => a + r.tokens, 0) / totalRuns : 0;
+  const requiredUserFields = blueprint.required_user_inputs || [];
+
+  // Contextual upload label based on what the agent reads
+  const uploadLabel = isForm
+    ? "Drop your vendor quote here or tap to upload"
+    : "Drop your " + (blueprint.runtime_inputs || "document") + " here or tap to upload";
+  const uploadSub = isForm
+    ? "PDF, Excel, or Word — any vendor quote format works"
+    : "PDF, TXT, CSV, Excel, Word";
 
   return (
     <div style={{ position: "fixed", inset: 0, background: C.bg, fontFamily: "'Syne', sans-serif", display: "flex", flexDirection: "column", zIndex: 1000 }}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&display=swap');
-        * { box-sizing: border-box; }
-        input, textarea { outline: none; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes fadein { from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none} }
-        @keyframes live { 0%{box-shadow:0 0 0 0 #22C55E55}100%{box-shadow:0 0 0 8px transparent} }
-        .fadein { animation: fadein 0.25s ease; }
-        .drop-zone:hover { border-color: #F97316 !important; }
-        ::-webkit-scrollbar { width: 4px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #1A2535; border-radius: 2px; }
-      `}</style>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&display=swap'); *{box-sizing:border-box} input,textarea{outline:none} @keyframes spin{to{transform:rotate(360deg)}} @keyframes fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}} @keyframes live{0%{box-shadow:0 0 0 0 #22C55E55}100%{box-shadow:0 0 0 8px transparent}} .fadein{animation:fadein 0.25s ease} .dz:hover{border-color:#F97316!important} ::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-thumb{background:#1A2535;border-radius:2px}`}</style>
 
+      {/* Header */}
       <div style={{ padding: "0.75rem 1.25rem", borderBottom: "1px solid " + C.border, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.85rem" }}>
           {onBack && <button onClick={onBack} style={{ background: "transparent", border: "1px solid " + C.border, borderRadius: "6px", padding: "0.3rem 0.6rem", color: C.muted, fontFamily: "monospace", fontSize: "0.55rem", cursor: "pointer" }}>← Back</button>}
@@ -582,16 +576,14 @@ export default function AgentDashboard({ agentData, onBack }) {
           </div>
         </div>
         <div style={{ fontFamily: "monospace", fontSize: "0.55rem", color: C.muted }}>
-          {freeRunsUsed >= FREE_RUN_LIMIT
-            ? <span style={{ color: C.accent }}>Subscribe to run →</span>
-            : <span>{FREE_RUN_LIMIT - freeRunsUsed} free run{FREE_RUN_LIMIT - freeRunsUsed !== 1 ? "s" : ""} remaining</span>
-          }
+          {freeRunsUsed >= FREE_LIMIT ? <span style={{ color: C.accent }}>Subscribe to run →</span> : <span>{FREE_LIMIT - freeRunsUsed} free run remaining</span>}
         </div>
       </div>
 
+      {/* Stats */}
       {totalRuns > 0 && (
         <div style={{ display: "flex", borderBottom: "1px solid " + C.border, flexShrink: 0 }}>
-          {[{ label: "RUNS", value: totalRuns }, { label: "SUCCESS", value: successRate + "%" }, { label: "AVG TIME", value: fmtDuration(avgDuration) }, { label: "AVG COST", value: fmtCost(avgCost) }].map((s, i) => (
+          {[{ label: "RUNS", value: totalRuns }, { label: "SUCCESS", value: successRate + "%" }, { label: "AVG TIME", value: fmtDuration(avgDur) }, { label: "AVG COST", value: fmtCost(avgCost) }].map((s, i) => (
             <div key={i} style={{ flex: 1, padding: "0.55rem 0.75rem", textAlign: "center", borderRight: i < 3 ? "1px solid " + C.border : "none" }}>
               <div style={{ fontFamily: "monospace", fontSize: "0.48rem", color: C.muted, letterSpacing: "0.07em", marginBottom: "0.15rem" }}>{s.label}</div>
               <div style={{ fontFamily: "monospace", fontSize: "0.75rem", color: C.text, fontWeight: 700 }}>{s.value}</div>
@@ -600,47 +592,88 @@ export default function AgentDashboard({ agentData, onBack }) {
         </div>
       )}
 
+      {/* Tabs */}
       <div style={{ display: "flex", borderBottom: "1px solid " + C.border, flexShrink: 0 }}>
         {["run", "history", "improve"].map(tab => (
-          <button key={tab} onClick={() => setActiveTab(tab)} style={{ flex: 1, padding: "0.6rem", background: "transparent", border: "none", borderBottom: "2px solid " + (activeTab === tab ? C.accent : "transparent"), color: activeTab === tab ? C.text : C.muted, fontFamily: "monospace", fontSize: "0.6rem", fontWeight: activeTab === tab ? 700 : 400, cursor: "pointer", transition: "all 0.2s", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+          <button key={tab} onClick={() => setActiveTab(tab)} style={{ flex: 1, padding: "0.6rem", background: "transparent", border: "none", borderBottom: "2px solid " + (activeTab === tab ? C.accent : "transparent"), color: activeTab === tab ? C.text : C.muted, fontFamily: "monospace", fontSize: "0.6rem", fontWeight: activeTab === tab ? 700 : 400, cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.06em" }}>
             {tab === "history" && totalRuns > 0 ? `History (${totalRuns})` : tab}
           </button>
         ))}
       </div>
 
+      {/* Content */}
       <div style={{ flex: 1, overflowY: "auto", padding: "1rem 1.25rem" }}>
 
+        {/* RUN TAB */}
         {activeTab === "run" && (
           <div className="fadein">
             {!currentResult ? (
               <>
-                <div className="drop-zone" onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={handleDrop} onClick={() => fileRef.current.click()} style={{ border: "1px dashed " + (dragOver ? C.accent : C.border), borderRadius: "10px", padding: "1.25rem 1rem", background: dragOver ? C.dim : C.card, cursor: "pointer", marginBottom: "0.65rem", display: "flex", alignItems: "center", gap: "0.75rem", transition: "all 0.2s" }}>
+                {/* Agent description chip */}
+                {blueprint.concept && (
+                  <div style={{ background: C.dim, border: "1px solid " + C.border, borderRadius: "8px", padding: "0.55rem 0.75rem", marginBottom: "0.75rem" }}>
+                    <div style={{ fontFamily: "monospace", fontSize: "0.47rem", color: C.muted, letterSpacing: "0.07em", marginBottom: "0.15rem" }}>WHAT THIS AGENT DOES</div>
+                    <div style={{ fontFamily: "monospace", fontSize: "0.6rem", color: C.text, lineHeight: 1.6 }}>{blueprint.concept}</div>
+                    {isForm && blueprint.template_fields.length > 0 && (
+                      <div style={{ marginTop: "0.35rem" }}>
+                        <div style={{ fontFamily: "monospace", fontSize: "0.47rem", color: C.muted, marginBottom: "0.2rem" }}>FILLS THESE FIELDS:</div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.2rem" }}>
+                          {blueprint.template_fields.slice(0, 8).map((f, i) => (
+                            <span key={i} style={{ background: C.success + "22", border: "1px solid " + C.success + "33", borderRadius: "4px", padding: "0.1rem 0.35rem", fontFamily: "monospace", fontSize: "0.46rem", color: C.success }}>{f}</span>
+                          ))}
+                          {blueprint.template_fields.length > 8 && <span style={{ fontFamily: "monospace", fontSize: "0.46rem", color: C.muted }}>+{blueprint.template_fields.length - 8} more</span>}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* User-provided fields inputs */}
+                <PreRunInputs
+                  fields={requiredUserFields}
+                  values={userFieldValues}
+                  onChange={(field, value) => setUserFieldValues(p => ({ ...p, [field]: value }))}
+                />
+
+                {/* File drop */}
+                <div className="dz" onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={handleDrop} onClick={() => fileRef.current.click()}
+                  style={{ border: "1px dashed " + (dragOver ? C.accent : C.border), borderRadius: "10px", padding: "1.25rem 1rem", background: dragOver ? C.dim : C.card, cursor: "pointer", marginBottom: "0.65rem", display: "flex", alignItems: "center", gap: "0.75rem", transition: "all 0.2s" }}>
                   <span style={{ fontSize: "1.5rem", flexShrink: 0 }}>+</span>
                   <div>
-                    <div style={{ fontFamily: "monospace", fontSize: "0.65rem", color: fileName ? C.text : C.muted }}>{fileName || "Drop a file or click to upload"}</div>
-                    <div style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.muted, marginTop: "0.1rem" }}>PDF, TXT, CSV, Excel, Word — anything your agent processes</div>
+                    <div style={{ fontFamily: "monospace", fontSize: "0.65rem", color: inputFile ? C.text : C.muted }}>{inputFile ? inputFile.name : uploadLabel}</div>
+                    <div style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.muted, marginTop: "0.1rem" }}>{uploadSub}</div>
                   </div>
                 </div>
                 <input ref={fileRef} type="file" style={{ display: "none" }} onChange={e => e.target.files[0] && handleFile(e.target.files[0])} />
+
                 <div style={{ fontFamily: "monospace", fontSize: "0.5rem", color: C.muted, textAlign: "center", marginBottom: "0.5rem" }}>OR PASTE CONTENT</div>
-                <textarea value={fileB64 ? "" : input} onChange={e => { setInput(e.target.value); setFileB64(null); setFileName(""); }} placeholder="Paste the content your agent should process — an email, a spec excerpt, a data dump..." rows={5} style={{ width: "100%", background: C.card, border: "1px solid " + (input && !fileB64 ? C.accent + "55" : C.border), borderRadius: "10px", padding: "0.8rem", color: C.text, fontFamily: "monospace", fontSize: "0.72rem", lineHeight: 1.65, resize: "none", marginBottom: "0.75rem" }} />
+                <textarea value={fileB64 ? "" : inputText} onChange={e => { setInputText(e.target.value); setFileB64(null); setInputFile(null); }}
+                  placeholder={"Paste the vendor quote content, or any text your agent should process..."}
+                  rows={4} style={{ width: "100%", background: C.card, border: "1px solid " + (inputText && !fileB64 ? C.accent + "55" : C.border), borderRadius: "10px", padding: "0.8rem", color: C.text, fontFamily: "monospace", fontSize: "0.72rem", lineHeight: 1.65, resize: "none", marginBottom: "0.75rem" }} />
+
                 {runError && <div style={{ background: C.error + "15", border: "1px solid " + C.error + "44", borderRadius: "7px", padding: "0.55rem 0.75rem", marginBottom: "0.65rem" }}><div style={{ fontFamily: "monospace", fontSize: "0.6rem", color: C.error }}>{runError}</div></div>}
-                <button onClick={runAgent} disabled={running || (!input.trim() && !fileB64)} style={{ width: "100%", background: running || (!input.trim() && !fileB64) ? C.dim : "linear-gradient(135deg," + C.accent + "," + C.gold + ")", border: "none", borderRadius: "10px", padding: "0.85rem", color: running || (!input.trim() && !fileB64) ? C.muted : "#000", fontFamily: "monospace", fontSize: "0.7rem", fontWeight: 800, cursor: running || (!input.trim() && !fileB64) ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}>
-                  {running ? <><span style={{ display: "inline-block", animation: "spin 1s linear infinite" }}>○</span> Running {agentName}...</> : freeRunsUsed >= FREE_RUN_LIMIT ? "SUBSCRIBE TO RUN AGAIN →" : "RUN AGENT →"}
+
+                <button onClick={runAgent} disabled={running || (!inputText.trim() && !fileB64)}
+                  style={{ width: "100%", background: running || (!inputText.trim() && !fileB64) ? C.dim : "linear-gradient(135deg," + C.accent + "," + C.gold + ")", border: "none", borderRadius: "10px", padding: "0.85rem", color: running || (!inputText.trim() && !fileB64) ? C.muted : "#000", fontFamily: "monospace", fontSize: "0.7rem", fontWeight: 800, cursor: running || (!inputText.trim() && !fileB64) ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}>
+                  {running ? <><span style={{ display: "inline-block", animation: "spin 1s linear infinite" }}>○</span> Running {agentName}...</> : freeRunsUsed >= FREE_LIMIT ? "SUBSCRIBE TO RUN AGAIN →" : "RUN " + agentName.toUpperCase() + " →"}
                 </button>
-                {freeRunsUsed < FREE_RUN_LIMIT && <div style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.muted, textAlign: "center", marginTop: "0.5rem" }}>This is your free run. Unlimited runs from $199/month after.</div>}
+                {freeRunsUsed < FREE_LIMIT && <div style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.muted, textAlign: "center", marginTop: "0.5rem" }}>This is your free run. Unlimited runs from $199/month after.</div>}
               </>
             ) : (
               <div className="fadein">
-                <OutputDisplay result={currentResult} compact={false} />
+                <OutputDisplay result={currentResult} blueprint={blueprint} compact={false} />
                 <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.85rem" }}>
                   <button onClick={clearRun} style={{ flex: 1, background: C.dim, border: "1px solid " + C.border, borderRadius: "8px", padding: "0.6rem", color: C.muted, fontFamily: "monospace", fontSize: "0.6rem", cursor: "pointer" }}>Run again</button>
-                  <button onClick={() => { const blob = new Blob([JSON.stringify(currentResult, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = agentName.replace(/\s+/g, "_") + "_output.json"; a.click(); }} style={{ flex: 1, background: "transparent", border: "1px solid " + C.success + "44", borderRadius: "8px", padding: "0.6rem", color: C.success, fontFamily: "monospace", fontSize: "0.6rem", cursor: "pointer" }}>↓ Download output</button>
+                  <button onClick={() => {
+                    const blob = new Blob([JSON.stringify(currentResult, null, 2)], { type: "application/json" });
+                    const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url;
+                    a.download = agentName.replace(/\s+/g, "_") + "_output.json"; a.click();
+                  }} style={{ flex: 1, background: "transparent", border: "1px solid " + C.success + "44", borderRadius: "8px", padding: "0.6rem", color: C.success, fontFamily: "monospace", fontSize: "0.6rem", cursor: "pointer" }}>↓ Download output</button>
                 </div>
-                {freeRunsUsed >= FREE_RUN_LIMIT && (
+                {freeRunsUsed >= FREE_LIMIT && (
                   <div style={{ marginTop: "0.85rem", background: C.accent + "0D", border: "1px solid " + C.accent + "33", borderRadius: "10px", padding: "0.85rem 1rem" }}>
                     <div style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.accent, letterSpacing: "0.07em", marginBottom: "0.3rem" }}>FREE RUN COMPLETE</div>
-                    <div style={{ fontFamily: "monospace", fontSize: "0.63rem", color: C.text, lineHeight: 1.6, marginBottom: "0.65rem" }}>Your agent works. Subscribe to keep it running — every run monitored, logged, and improving.</div>
+                    <div style={{ fontFamily: "monospace", fontSize: "0.63rem", color: C.text, lineHeight: 1.6, marginBottom: "0.65rem" }}>Your agent works. Subscribe to keep it running, monitored, and improving.</div>
                     <button onClick={() => setShowStripeGate(true)} style={{ background: "linear-gradient(135deg," + C.accent + "," + C.gold + ")", border: "none", borderRadius: "7px", padding: "0.6rem 1.25rem", color: "#000", fontFamily: "monospace", fontSize: "0.65rem", fontWeight: 800, cursor: "pointer" }}>SUBSCRIBE — $199/mo →</button>
                   </div>
                 )}
@@ -653,29 +686,19 @@ export default function AgentDashboard({ agentData, onBack }) {
           <div className="fadein">
             {runs.length === 0
               ? <div style={{ textAlign: "center", padding: "2.5rem 1rem" }}><div style={{ fontFamily: "monospace", fontSize: "0.65rem", color: C.muted, lineHeight: 1.7 }}>No runs yet.<br />Switch to Run tab and process your first document.</div></div>
-              : runs.map((run, i) => <RunCard key={run.id} run={run} index={runs.length - 1 - i} />)
+              : runs.map((run, i) => <RunCard key={run.id} run={run} index={runs.length - 1 - i} blueprint={blueprint} />)
             }
           </div>
         )}
 
         {activeTab === "improve" && (
           <div className="fadein">
-            <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: "10px", padding: "0.85rem 1rem", marginBottom: "1rem" }}>
-              <div style={{ fontFamily: "monospace", fontSize: "0.5rem", color: C.muted, letterSpacing: "0.07em", marginBottom: "0.45rem" }}>AGENT DEFINITION</div>
-              {[{ label: "Concept", value: blueprint?.concept || blueprint?._raw?.concept }, { label: "Reads", value: blueprint?._raw?.inputs }, { label: "Produces", value: blueprint?._raw?.outputs }, { label: "Standing context", value: blueprint?.standing_context?.length > 0 ? blueprint.standing_context.length + " document(s) uploaded" : "None — add from Improve queue" }].filter(i => i.value).map((item, i) => (
-                <div key={i} style={{ display: "flex", gap: "0.6rem", marginBottom: "0.25rem" }}>
-                  <span style={{ fontFamily: "monospace", fontSize: "0.5rem", color: C.accent, flexShrink: 0, minWidth: "80px", marginTop: "2px" }}>{item.label}</span>
-                  <span style={{ fontFamily: "monospace", fontSize: "0.58rem", color: C.muted, lineHeight: 1.55 }}>{item.value}</span>
-                </div>
-              ))}
-            </div>
-            <div style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.muted, letterSpacing: "0.07em", marginBottom: "0.75rem" }}>IMPROVEMENT QUEUE</div>
-            <ImprovementQueue blueprint={blueprint} runs={runs} />
+            <ImproveTab blueprint={blueprint} runs={runs} />
           </div>
         )}
       </div>
 
-      {showStripeGate && <StripeGateModal agentName={agentName} onClose={() => setShowStripeGate(false)} />}
+      {showStripeGate && <StripeGate agentName={agentName} onClose={() => setShowStripeGate(false)} />}
     </div>
   );
 }
