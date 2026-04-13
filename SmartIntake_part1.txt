@@ -1,7 +1,3 @@
-// SmartIntake.jsx PART 1 OF 2 — Agent Academy | April 2026 (LATEST — TRIGGER FIX)
-// KEY FIX: All trigger/systems suggestions now manual-only. No email API, no platform integrations, no OAuth.
-// Combine: cat SmartIntake_part1.txt SmartIntake_part2.txt > SmartIntake.jsx
-
 import { useState, useRef, useEffect } from "react";
 
 const C = {
@@ -12,8 +8,14 @@ const C = {
 
 const callClaude = async (messages, system, max_tokens) => {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: max_tokens || 600, messages, ...(system ? { system } : {}) }),
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: max_tokens || 600,
+      messages,
+      ...(system ? { system } : {}),
+    }),
   });
   if (!res.ok) throw new Error("API " + res.status);
   const d = await res.json();
@@ -31,14 +33,26 @@ const parseJSON = (text) => {
 const getFallback = (concept, key) => {
   const l = (concept || "").toLowerCase();
   const isConstruction = l.includes("submittal") || l.includes("construction") || l.includes("rfi");
+  const isEmail = l.includes("email") || l.includes("inbox");
   if (isConstruction) {
     const m = {
       trigger: "When I manually upload specification PDF files directly into the agent interface.",
-      inputs: "Specification PDFs (all relevant divisions), project name, and any bulletins or addenda.",
+      inputs: "Specification PDFs (all relevant divisions), project name, and any bulletins or addenda issued after contract award.",
       outputs: "Formatted Excel submittal log with item number, spec section, description, submittal type, required-by date, and status columns.",
       knowledge: "Past submittal logs from similar projects and spec section naming conventions.",
       systems: "A shared Box or Google Drive folder for spec storage and output delivery.",
-      humanGate: "Before delivering the log to any external party, and whenever it finds a spec section it cannot parse.",
+      humanGate: "Before delivering the log to any external party, and whenever it finds a spec section it cannot parse or a conflict between documents.",
+    };
+    return m[key] || "";
+  }
+  if (isEmail) {
+    const m = {
+      trigger: "When I manually upload an email or document file directly into the agent interface.",
+      inputs: "Email subject, sender name, full body text, and any attachments — uploaded as a file.",
+      outputs: "A draft reply document ready for my review, saved to a shared folder.",
+      knowledge: "Past email threads saved as reference files, standard response templates.",
+      systems: "A shared Box or Google Drive folder for input and output files.",
+      humanGate: "Before I send any reply externally, and when the topic requires judgment it doesn't have context for.",
     };
     return m[key] || "";
   }
@@ -46,7 +60,7 @@ const getFallback = (concept, key) => {
     trigger: "When I manually upload a file or document directly into the agent interface.",
     inputs: "The data, documents, or requests the agent needs to read before it can begin.",
     outputs: "A completed document, updated record, or structured file ready for download.",
-    knowledge: "Structured lookup tables it queries and formatted past examples it follows — not prose documents.",
+    knowledge: "Structured lookup tables it queries (approved lists, pricing, substitutions) and formatted past examples it follows — not prose documents.",
     systems: "A shared Box or Google Drive folder for input files and output delivery.",
     humanGate: "Before saving or sharing any output, or when confidence in the result is low.",
   };
@@ -84,6 +98,9 @@ const getFallbackHints = (stepKey, concept) => {
       { gap: "What does it produce when finished?", options: ["a formatted spreadsheet or report I can download", "a draft document ready for my review", "an updated record saved to a shared folder"] },
       { gap: "What should happen when the source data changes?", options: ["I upload the updated file and it re-runs", "I paste the new content and it produces a fresh output", "I provide a new file and it shows what changed"] },
     ],
+    templatePrompt: [
+      { gap: "Does your company already have a template for this output?", options: ["yes, I have an existing template I can upload", "no, I need help designing the format and fields", "I don't have one yet but want to create one together"] },
+    ],
     trigger: [
       { gap: "How does the user provide input to the agent?", options: ["I upload a file directly into the agent interface", "I drag and drop a file into the agent", "I paste content or text directly into the agent"] },
       { gap: "Are there other ways to provide input?", options: ["I provide a Box shared folder link containing the files", "I upload a batch of files at once", "I manually start it after preparing the files"] },
@@ -94,7 +111,7 @@ const getFallbackHints = (stepKey, concept) => {
     ],
     outputs: [
       { gap: "What format is the output?", options: ["an Excel spreadsheet with structured columns", "a PDF report formatted for sharing", "a formatted document ready to download"] },
-      { gap: "Where does the output go?", options: ["downloaded directly from the agent as a file", "saved to a shared Box folder", "saved to a Google Drive folder I specify"] },
+      { gap: "Where does the output go?", options: ["downloaded directly from the agent as a file", "saved to a shared Box or Google Drive folder", "saved to a folder and notification sent"] },
     ],
     systems: [
       { gap: "Where does it read input from?", options: ["files I upload directly into the agent interface", "a shared Box folder I drop files into", "a Google Drive folder I provide a link to"] },
@@ -127,7 +144,7 @@ const analyzeTemplate = async (file, setSuggestions, setAnalysis, setAnalyzing) 
       if (file.type === "application/pdf") { reader.readAsDataURL(file); } else { reader.readAsText(file); }
     });
     let messages;
-    const prompt = 'Analyze this form that an AI agent will fill out from a source document uploaded by the user. Return JSON only:\n{"fields":["all field names"],"source_document_fields":["fields extracted from uploaded source doc — line items, quantities, prices, dates"],"user_provided_fields":["fields user types manually — codes, names, numbers, approvers"],"computed_fields":["fields agent calculates — totals, page numbers"],"required_inputs":"one sentence: what source document does user upload each time?","trigger":"when is this form typically filled out?","outputs":"completed form description","humanGate":"when should human review before submitting?","summary":"one sentence: what is this form for?"}';
+    const prompt = 'Analyze this form that an AI agent will fill out from a source document uploaded by the user. Return JSON only:\n{"fields":["all field names"],"source_document_fields":["fields extracted from uploaded source doc"],"user_provided_fields":["fields user types manually"],"computed_fields":["fields agent calculates"],"required_inputs":"what source document does user upload?","trigger":"when is this form filled out?","outputs":"completed form description","humanGate":"when should human review?","summary":"what is this form for?"}';
     if (file.type === "application/pdf") {
       const b64 = fileContent.split(",")[1];
       messages = [{ role: "user", content: [{ type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } }, { type: "text", text: prompt }] }];
@@ -152,25 +169,41 @@ const analyzeTemplate = async (file, setSuggestions, setAnalysis, setAnalyzing) 
 const getDomainContext = (text) => {
   const l = text.toLowerCase();
   if (l.includes("submittal log") || l.includes("submittal register"))
-    return "DOMAIN FACT: A submittal log is an OUTPUT built by reading construction SPECIFICATION documents (spec PDFs). Input = spec docs uploaded by user. Output = the log. Do not suggest submittals as inputs.";
+    return "DOMAIN FACT: A submittal log is an OUTPUT built by reading construction SPECIFICATION documents. Input = spec docs uploaded by user. Output = the log. Do not suggest submittals as inputs.";
   if (l.includes("rfi") || (l.includes("change order") && l.includes("construction")))
-    return "DOMAIN FACT: RFI agents read RFI documents (uploaded by user as files) and produce impact analysis memos or notice letters (outputs).";
-  if (l.includes("invoice") && (l.includes("extract") || l.includes("process") || l.includes("review")))
-    return "DOMAIN FACT: Invoice processing agents read invoice PDFs (uploaded by user) and produce structured data records or approval requests (outputs).";
+    return "DOMAIN FACT: RFI/change order agents read RFI documents (uploaded by user) and produce impact analysis memos or notice letters (outputs).";
+  if (l.includes("punch list"))
+    return "DOMAIN FACT: Punch list agents read inspection notes or photos (uploaded as files) and produce a formatted punch list document (output).";
   if (l.includes("contract review") || l.includes("contract analysis"))
     return "DOMAIN FACT: Contract review agents read contract documents (uploaded by user) and produce risk summaries or clause extractions (outputs).";
-  if (l.includes("material request") || l.includes("purchase order") || l.includes("po ") || l.includes(" po"))
-    return "DOMAIN FACT: A material request agent reads a vendor quote (uploaded by user as a file) and produces a filled-out company MR/PO form (output). The quote is the input. The completed form is the output.";
-  if (l.includes("resum") || (l.includes("cv") && (l.includes("screen") || l.includes("review") || l.includes("rank"))))
-    return "DOMAIN FACT: Resume screening agents read job descriptions and candidate resumes (uploaded by user) and produce ranked shortlists or fit scores (outputs).";
-  if (l.includes("expense") && (l.includes("report") || l.includes("approv") || l.includes("process")))
-    return "DOMAIN FACT: Expense agents read receipts or expense forms (uploaded by user) and produce categorized expense reports (outputs).";
+  if (l.includes("invoice") && (l.includes("extract") || l.includes("process") || l.includes("review")))
+    return "DOMAIN FACT: Invoice processing agents read invoice PDFs (uploaded by user) and produce structured data records or approval requests (outputs).";
   if (l.includes("lease") && (l.includes("abstract") || l.includes("review") || l.includes("extract")))
     return "DOMAIN FACT: Lease abstraction agents read lease documents (uploaded by user) and produce structured summaries of key terms (outputs).";
+  if (l.includes("medical record") || l.includes("patient record") || l.includes("clinical note"))
+    return "DOMAIN FACT: Medical record agents read clinical documents (uploaded by user) and produce structured summaries or coded entries (outputs).";
+  if (l.includes("lead") && (l.includes("qualify") || l.includes("score") || l.includes("enrich")))
+    return "DOMAIN FACT: Lead qualification agents read prospect data files (uploaded by user) and produce scored/enriched lead records (outputs).";
+  if (l.includes("proposal") && (l.includes("generat") || l.includes("creat") || l.includes("draft") || l.includes("build")))
+    return "DOMAIN FACT: Proposal generation agents read deal data and requirements (uploaded by user) and produce formatted proposal documents (outputs).";
+  if (l.includes("expense") && (l.includes("report") || l.includes("approv") || l.includes("process")))
+    return "DOMAIN FACT: Expense agents read receipts or expense forms (uploaded by user) and produce categorized expense reports (outputs).";
+  if (l.includes("reconcil"))
+    return "DOMAIN FACT: Reconciliation agents read two or more data files (uploaded by user) and produce a discrepancy report (output).";
+  if (l.includes("resum") || (l.includes("cv") && (l.includes("screen") || l.includes("review") || l.includes("rank"))))
+    return "DOMAIN FACT: Resume screening agents read job descriptions and resumes (uploaded by user) and produce ranked shortlists or fit scores (outputs).";
+  if (l.includes("onboard"))
+    return "DOMAIN FACT: Onboarding agents read new hire data and policy documents (uploaded by user) and produce checklists or welcome communications (outputs).";
+  if (l.includes("ticket") && (l.includes("triage") || l.includes("route") || l.includes("classif") || l.includes("priorit")))
+    return "DOMAIN FACT: Ticket triage agents read support tickets (uploaded or pasted) and produce classified, prioritized assignments (outputs).";
   if ((l.includes("email") || l.includes("inbox")) && (l.includes("draft") || l.includes("reply") || l.includes("response") || l.includes("triage")))
-    return "DOMAIN FACT: Email agents read email files (uploaded by user as .eml or pasted text — NOT connected to live email) and produce draft reply documents (outputs). No email API required.";
+    return "DOMAIN FACT: Email agents read email files (uploaded by user or pasted — NOT connected to live email) and produce draft reply documents (outputs). No email API required.";
   if (l.includes("research") && (l.includes("report") || l.includes("summary") || l.includes("brief") || l.includes("compil")))
     return "DOMAIN FACT: Research agents read source documents (uploaded by user) and produce synthesized reports or summaries (outputs).";
+  if (l.includes("content") && (l.includes("generat") || l.includes("creat") || l.includes("draft") || l.includes("write")))
+    return "DOMAIN FACT: Content generation agents read briefs and reference material (uploaded by user) and produce written content (outputs).";
+  if (l.includes("material request") || l.includes("purchase order") || l.includes("po ") || l.includes(" po"))
+    return "DOMAIN FACT: A material request agent reads a vendor quote (uploaded by user as a file) and produces a filled-out company MR/PO form (output). The quote is the input. The completed form is the output.";
   return "";
 };
 
@@ -183,10 +216,10 @@ const STEPS = [
     hint: "Include: what triggers it, what it produces, and any ongoing update scenarios.",
     coachQ: (val, concept, ctx, correction) => {
       const domainCtx = getDomainContext(val + " " + (concept||""));
-      const correctionCtx = correction ? "IMPORTANT: The user has clarified that at their company, this process means: \"" + correction + "\". Use this understanding.\n\n" : "";
+      const correctionCtx = correction ? "IMPORTANT: The user has clarified that at their company, this process means: \"" + correction + "\". Use this understanding for all recommendations.\n\n" : "";
       return (domainCtx ? domainCtx + "\n\n" : "") + correctionCtx +
         "Agent description: \"" + val + "\"\n\n" +
-        "IMPORTANT CONSTRAINT: This agent has NO email API, NO platform integrations, NO OAuth. The user manually uploads files or pastes content into the agent interface. All suggestions must reflect this — no live connections to external systems.\n\n" +
+        "CONSTRAINT: This agent has NO email API, NO platform integrations, NO OAuth. User manually uploads files or pastes content. All suggestions must reflect this.\n\n" +
         "Return ONLY this JSON:\n{\"understanding\":\"I'm treating [term] as [assumption]...\",\"hints\":[{\"gap\":\"...\",\"options\":[\"...\",\"...\",\"...\"]}]}";
     },
   },
@@ -220,7 +253,7 @@ const STEPS = [
     hint: "Upload the actual file — not a description of it. The agent will learn your exact column structure, field names, and format.",
     optional: true,
     isTemplate: true,
-    coachQ: (val, concept, ctx) => "What has been defined so far:\n" + (ctx||concept) + "\n\nOutput template: \"" + val + "\"\n\nWhat template details are missing? For each gap provide 3 short options.\n\nReturn ONLY JSON array:\n[{\"gap\":\"gap description\",\"options\":[\"option A\",\"option B\",\"option C\"]}]",
+    coachQ: (val, concept) => "Agent: \"" + concept + "\"\nOutput template: \"" + val + "\"\n\nWhat template details are missing? For each gap provide 3 short options.\n\nReturn ONLY JSON array:\n[{\"gap\":\"gap description\",\"options\":[\"option A\",\"option B\",\"option C\"]}]",
   },
   {
     key: "crossReference",
@@ -233,7 +266,7 @@ const STEPS = [
       { gap: "Does it need to verify anything before producing its output?", options: ["no — just process the input and produce the output, no cross-checks needed for v1", "compare against a reference list I upload once to flag anything not approved", "compare against a previous version of the output to catch changes or conflicts"] },
       { gap: "Are there secondary documents it should check against?", options: ["no secondary documents needed for v1 — keep it simple", "a lookup table or reference list I upload once and it checks automatically every run", "a prior output file to detect duplicates or conflicts"] },
     ],
-    coachQ: (val, concept, ctx) => "What has been defined so far:\n" + (ctx||concept) + "\n\nCross-reference docs: \"" + val + "\"\n\nIMPORTANT: Suggest simplest options first. All docs are uploaded once by user — no live API connections. For each gap provide 3 options simplest first.\n\nReturn ONLY JSON array:\n[{\"gap\":\"gap description\",\"options\":[\"simplest option\",\"option B\",\"option C\"]}]",
+    coachQ: (val, concept, ctx) => "What has been defined so far:\n" + (ctx||concept) + "\n\nCross-reference docs: \"" + val + "\"\n\nSimplest options first. All docs uploaded once by user — no live connections. For each gap provide 3 options.\n\nReturn ONLY JSON array:\n[{\"gap\":\"gap description\",\"options\":[\"option A\",\"option B\",\"option C\"]}]",
   },
   {
     key: "knowledge",
@@ -246,7 +279,7 @@ const STEPS = [
       { gap: "Structured lookup data it queries", options: ["an approved products/manufacturers list as a structured table (CSV)", "a pricing or cost reference table it queries by item", "a lookup table of standard item descriptions"] },
       { gap: "Formatted examples it follows", options: ["2-3 past completed outputs formatted as structured examples", "sample entries showing correct format and field values", "a reference set of correctly classified items with explanations"] },
     ],
-    coachQ: (val, concept, ctx) => "What has been defined so far:\n" + (ctx||concept) + "\n\nReference data: \"" + val + "\"\n\nDistinguish between (1) structured lookup data and (2) formatted few-shot examples. Do NOT suggest prose documents, lessons learned, or behavioral rules. All reference data uploaded once by user. For each gap provide 3 short specific options.\n\nReturn ONLY JSON array:\n[{\"gap\":\"gap description\",\"options\":[\"option A\",\"option B\",\"option C\"]}]",
+    coachQ: (val, concept, ctx) => "What has been defined so far:\n" + (ctx||concept) + "\n\nReference data: \"" + val + "\"\n\nDistinguish between (1) structured lookup data and (2) formatted few-shot examples. Do NOT suggest prose documents or behavioral rules. For each gap provide 3 short specific options.\n\nReturn ONLY JSON array:\n[{\"gap\":\"gap description\",\"options\":[\"option A\",\"option B\",\"option C\"]}]",
   },
   {
     key: "systems",
@@ -255,7 +288,7 @@ const STEPS = [
     placeholder: "e.g. Input files uploaded directly into the agent, output saved to a shared Box folder...",
     hint: "Box and Google Drive shared folders work without any API setup or OAuth. Keep it simple.",
     optional: true,
-    coachQ: (val, concept, ctx) => "What has been defined so far:\n" + (ctx||concept) + "\n\nSystems: \"" + val + "\"\n\nCRITICAL: NO OAuth, NO platform APIs. ONLY suggest: (1) files uploaded directly into agent interface, (2) Box shared folder, (3) Google Drive shared folder, (4) downloaded output file. Do NOT suggest email, CRM, project management platforms, or any connection requiring an API key.\n\nFor each gap provide 3 options, all achievable without API setup.\n\nReturn ONLY JSON array:\n[{\"gap\":\"gap description\",\"options\":[\"option A\",\"option B\",\"option C\"]}]",
+    coachQ: (val, concept, ctx) => "What has been defined so far:\n" + (ctx||concept) + "\n\nSystems: \"" + val + "\"\n\nCRITICAL: NO OAuth, NO platform APIs. ONLY suggest: (1) files uploaded directly into agent interface, (2) Box shared folder, (3) Google Drive shared folder, (4) downloaded output file. Do NOT suggest email, CRM, project management platforms, or any API.\n\nReturn ONLY JSON array:\n[{\"gap\":\"gap description\",\"options\":[\"option A\",\"option B\",\"option C\"]}]",
   },
   {
     key: "humanGate",
@@ -266,9 +299,9 @@ const STEPS = [
     starterHints: [
       { gap: "Before the output is saved or delivered", options: ["always show me the completed output for review before saving", "only flag for review if a required field couldn't be filled", "produce the output automatically — I'll review the downloaded file myself"] },
       { gap: "When something is missing or unclear in the input", options: ["stop and ask me what value to use for any missing required field", "leave the field blank and flag it with a note", "make a best guess and mark it clearly for my review"] },
-      { gap: "For any values I always need to confirm", options: ["ask me to confirm key reference values (like codes, numbers, or IDs) before starting", "use whatever values I provide at the start with no confirmation needed", "pre-fill from the last run and let me change anything before it proceeds"] },
+      { gap: "For any values I always need to confirm", options: ["ask me to confirm key reference values before starting", "use whatever values I provide at the start", "pre-fill from the last run and let me change anything before it proceeds"] },
     ],
-    coachQ: (val, concept, ctx) => "What has been defined so far:\n" + (ctx||concept) + "\n\nHuman oversight: \"" + val + "\"\n\nWhat oversight gates are missing? When should this specific agent stop and check? For each gap provide 3 short injectable options.\n\nReturn ONLY JSON array:\n[{\"gap\":\"gap description\",\"options\":[\"option A\",\"option B\",\"option C\"]}]",
+    coachQ: (val, concept, ctx) => "What has been defined so far:\n" + (ctx||concept) + "\n\nHuman oversight: \"" + val + "\"\n\nWhat oversight gates are missing? For each gap provide 3 short injectable options.\n\nReturn ONLY JSON array:\n[{\"gap\":\"gap description\",\"options\":[\"option A\",\"option B\",\"option C\"]}]",
   },
   {
     key: "name",
@@ -280,3 +313,82 @@ const STEPS = [
     noCoach: true,
   },
 ];
+
+function HintCard({ hint, index, addedOptions, onInject, onUndo, onDiscuss }) {
+  const addedList = addedOptions || [];
+  return (
+    <div style={{ background: addedList.length > 0 ? C.success + "08" : "#0D1B27", border: "1px solid " + (addedList.length > 0 ? C.success + "33" : "#1D3246"), borderRadius: "8px", padding: "0.7rem 0.8rem", marginBottom: "0.4rem" }}>
+      <div style={{ display: "flex", gap: "0.5rem", alignItems: "flex-start" }}>
+        <span style={{ color: addedList.length > 0 ? C.success : C.accent, flexShrink: 0, fontSize: "0.65rem", marginTop: "3px" }}>{addedList.length > 0 ? "+" : "->"}</span>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: "0.82rem", color: "#D0E4EE", lineHeight: 1.65, marginBottom: "0.45rem" }}>{hint.gap}</div>
+          {addedList.length > 0 && (
+            <div style={{ marginBottom: "0.4rem" }}>
+              {addedList.map((a, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.2rem" }}>
+                  <span style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.success }}>+ added: "{a}"</span>
+                  <button onClick={() => onUndo(index, a)} style={{ background: "transparent", border: "none", color: C.muted, cursor: "pointer", fontFamily: "monospace", fontSize: "0.5rem", padding: "0 0.2rem" }}>undo</button>
+                </div>
+              ))}
+            </div>
+          )}
+          {hint.options && hint.options.filter(o => !addedList.includes(o)).length > 0 && (
+            <div style={{ marginBottom: "0.35rem" }}>
+              <div style={{ fontFamily: "monospace", fontSize: "0.5rem", color: C.cyan, marginBottom: "0.25rem", letterSpacing: "0.06em" }}>{addedList.length > 0 ? "ADD MORE:" : "PICK A SOLUTION TO INJECT:"}</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+                {hint.options.filter(o => !addedList.includes(o)).map((opt, oi) => (
+                  <button key={oi} onClick={() => onInject(index, opt)}
+                    style={{ background: "#0A1E2E", border: "1px solid " + C.cyan + "44", borderRadius: "6px", padding: "0.4rem 0.65rem", color: "#A0D4E8", fontFamily: "monospace", fontSize: "0.62rem", cursor: "pointer", textAlign: "left", lineHeight: 1.5 }}
+                    onMouseOver={e => e.currentTarget.style.background = "#0F2A3E"} onMouseOut={e => e.currentTarget.style.background = "#0A1E2E"}>
+                    + {opt}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {addedList.length === 0 && (
+            <button onClick={() => onDiscuss(hint.gap)} style={{ background: "transparent", border: "1px solid #1D3246", borderRadius: "5px", padding: "0.3rem 0.65rem", color: "#7090A8", fontFamily: "monospace", fontSize: "0.55rem", cursor: "pointer" }}>Discuss instead</button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChatBox({ open, onToggle, history, onSend, loading, concept, stepHeadline }) {
+  const [input, setInput] = useState("");
+  const endRef = useRef(null);
+  useEffect(() => { endRef.current && endRef.current.scrollIntoView({ behavior: "smooth" }); }, [history]);
+  if (!open) {
+    return (
+      <button onClick={onToggle} style={{ width: "100%", background: "transparent", border: "1px solid " + C.border, borderRadius: "8px", padding: "0.55rem 0.85rem", color: C.muted, fontFamily: "monospace", fontSize: "0.6rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.5rem", textAlign: "left" }}>
+        <span>Chat</span><span>Not sure what this means? Ask me anything.</span>
+      </button>
+    );
+  }
+  return (
+    <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: "10px", overflow: "hidden" }}>
+      <div style={{ background: C.dim, padding: "0.4rem 0.7rem", borderBottom: "1px solid " + C.border, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.muted }}>Assistant (knows your agent)</span>
+        <button onClick={onToggle} style={{ background: "transparent", border: "none", color: C.muted, cursor: "pointer", fontSize: "1rem", lineHeight: 1 }}>x</button>
+      </div>
+      <div style={{ maxHeight: "170px", overflowY: "auto", padding: "0.6rem", display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+        {history.map((m, i) => (
+          <div key={i} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
+            <div style={{ background: m.role === "user" ? C.accent : C.dim, color: m.role === "user" ? "#000" : C.text, borderRadius: m.role === "user" ? "10px 10px 2px 10px" : "10px 10px 10px 2px", padding: "0.45rem 0.6rem", fontFamily: "monospace", fontSize: "0.63rem", lineHeight: 1.6, maxWidth: "88%" }}>{m.content}</div>
+          </div>
+        ))}
+        {loading && <div style={{ display: "flex" }}><div style={{ background: C.dim, borderRadius: "10px 10px 10px 2px", padding: "0.45rem 0.6rem", fontFamily: "monospace", fontSize: "0.6rem", color: C.muted }}>Thinking...</div></div>}
+        <div ref={endRef} />
+      </div>
+      <div style={{ padding: "0.4rem 0.5rem", borderTop: "1px solid " + C.border, display: "flex", gap: "0.3rem" }}>
+        <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && input.trim()) { onSend(input.trim()); setInput(""); } }} placeholder="Ask anything..."
+          style={{ flex: 1, background: C.bg, border: "1px solid " + C.dim, borderRadius: "6px", padding: "0.38rem 0.5rem", color: C.text, fontFamily: "monospace", fontSize: "0.63rem", outline: "none" }} />
+        <button onClick={() => { if (input.trim()) { onSend(input.trim()); setInput(""); } }} disabled={!input.trim() || loading}
+          style={{ background: input.trim() ? C.accent : C.dim, border: "none", borderRadius: "6px", padding: "0.38rem 0.65rem", color: input.trim() ? "#000" : C.muted, fontFamily: "monospace", fontWeight: 700, cursor: input.trim() ? "pointer" : "not-allowed" }}>
+          -&gt;
+        </button>
+      </div>
+    </div>
+  );
+}
