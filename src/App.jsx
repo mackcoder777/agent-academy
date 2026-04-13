@@ -1,5 +1,4 @@
-import SmartIntake from "./components/SmartIntakeV6";
-
+import SmartIntake from './components/SmartIntake'
 export default function App() {
-  return <SmartIntake onComplete={(data) => console.log("Blueprint complete:", data)} />;
+  return <SmartIntake />
 }

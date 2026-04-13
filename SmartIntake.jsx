@@ -13,7 +13,7 @@ const C = {
 };
 
 const callClaude = async (messages, system, max_tokens) => {
-  const res = await fetch("/api/claude", {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
