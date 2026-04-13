@@ -3,19 +3,6 @@
 // Combine: cat SmartIntake_part1.txt SmartIntake_part2.txt > SmartIntake.jsx
 
 import { useState, useRef, useEffect } from "react";
-import * as XLSX from "xlsx";
-
-const readXlsxAsText = async (file) => {
-  const buffer = await file.arrayBuffer();
-  const wb = XLSX.read(buffer, { type: "array" });
-  const lines = [];
-  for (const name of wb.SheetNames) {
-    const ws = wb.Sheets[name];
-    const csv = XLSX.utils.sheet_to_csv(ws, { blankrows: false });
-    if (csv.trim()) { lines.push("=== Sheet: " + name + " ==="); lines.push(csv); }
-  }
-  return lines.join("\n");
-};
 
 const C = {
   bg: "#06080B", surface: "#0B0F16", card: "#0F1720", border: "#182430",
@@ -133,21 +120,18 @@ const outputIsDocument = (concept) => {
 const analyzeTemplate = async (file, setSuggestions, setAnalysis, setAnalyzing) => {
   setAnalyzing(true);
   try {
+    const reader = new FileReader();
+    const fileContent = await new Promise((resolve, reject) => {
+      reader.onload = e => resolve(e.target.result);
+      reader.onerror = reject;
+      if (file.type === "application/pdf") { reader.readAsDataURL(file); } else { reader.readAsText(file); }
+    });
     let messages;
-    const isXlsx = file.name.match(/\.xlsx?$/i);
-    const isPdf = file.type === "application/pdf";
     const prompt = 'Analyze this form that an AI agent will fill out from a source document uploaded by the user. Return JSON only:\n{"fields":["all field names"],"source_document_fields":["fields extracted from uploaded source doc — line items, quantities, prices, dates"],"user_provided_fields":["fields user types manually — codes, names, numbers, approvers"],"computed_fields":["fields agent calculates — totals, page numbers"],"required_inputs":"one sentence: what source document does user upload each time?","trigger":"when is this form typically filled out?","outputs":"completed form description","humanGate":"when should human review before submitting?","summary":"one sentence: what is this form for?"}';
-    if (isPdf) {
-      const reader = new FileReader();
-      const fileContent = await new Promise((resolve, reject) => { reader.onload = e => resolve(e.target.result); reader.onerror = reject; reader.readAsDataURL(file); });
+    if (file.type === "application/pdf") {
       const b64 = fileContent.split(",")[1];
       messages = [{ role: "user", content: [{ type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } }, { type: "text", text: prompt }] }];
-    } else if (isXlsx) {
-      const xlsxText = await readXlsxAsText(file);
-      messages = [{ role: "user", content: "Excel template (all sheets as CSV):\n\n" + xlsxText.substring(0, 4000) + "\n\n" + prompt }];
     } else {
-      const reader = new FileReader();
-      const fileContent = await new Promise((resolve, reject) => { reader.onload = e => resolve(e.target.result); reader.onerror = reject; reader.readAsText(file); });
       messages = [{ role: "user", content: "Form content:\n\n" + fileContent.substring(0, 3000) + "\n\n" + prompt }];
     }
     const raw = await callClaude(messages, "", 600);
@@ -530,7 +514,7 @@ export default function SmartIntake({ onComplete }) {
             {window._agentAcademyComplete && (
               <button onClick={() => { window._agentAcademyComplete(); window._agentAcademyComplete = null; }}
                 style={{ width: "100%", background: "linear-gradient(135deg," + C.accent + "," + C.gold + ")", border: "none", borderRadius: "8px", padding: "0.65rem", color: "#000", fontFamily: "monospace", fontSize: "0.65rem", fontWeight: 700, cursor: "pointer", marginBottom: "0.5rem" }}>
-                {"START ACADEMY \u2014 DEPLOY & IMPROVE \u2192"}
+                START ACADEMY — DEPLOY & IMPROVE ->
               </button>
             )}
             <button onClick={() => { setBlueprint(null); setStep(0); setData({}); setSuggestions({}); setSuggestState("idle"); }}
