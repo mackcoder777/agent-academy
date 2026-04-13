@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { background: #07090C; color: #DCE8F0; }
+body { background: #F8F9FB; color: #1F2937; font-family: 'Inter', system-ui, -apple-system, sans-serif; }
 #root { width: 100%; max-width: 100%; }

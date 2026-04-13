@@ -1,15 +1,14 @@
-// SmartIntake.jsx PART 1 OF 2 — Agent Academy | April 2026
-// CONTAINS: All helpers, constants, getDomainContext, STEPS array, HintCard, ChatBox
-// PART 2 CONTAINS: SmartIntake component (the actual React component with all state/logic)
+// SmartIntake.jsx PART 1 OF 2 — Agent Academy | April 2026 (LATEST — TRIGGER FIX)
+// KEY FIX: All trigger/systems suggestions now manual-only. No email API, no platform integrations, no OAuth.
 // Combine: cat SmartIntake_part1.txt SmartIntake_part2.txt > SmartIntake.jsx
 
 import { useState, useRef, useEffect } from "react";
 import * as XLSX from "xlsx";
 
 const C = {
-  bg: "#06080B", surface: "#0B0F16", card: "#0F1720", border: "#182430",
-  accent: "#F97316", gold: "#F59E0B", text: "#DCE8F0", muted: "#3D5568",
-  dim: "#1A2535", code: "#040608", success: "#22C55E", cyan: "#22D3EE",
+  bg: "#F8F9FB", surface: "#FFFFFF", card: "#FFFFFF", border: "#E5E7EB",
+  accent: "#7C3AED", gold: "#7C3AED", text: "#1F2937", muted: "#6B7280",
+  dim: "#F3F4F6", code: "#F9FAFB", success: "#059669", cyan: "#7C3AED",
 };
 
 const callClaude = async (messages, system, max_tokens) => {
@@ -33,36 +32,24 @@ const parseJSON = (text) => {
 const getFallback = (concept, key) => {
   const l = (concept || "").toLowerCase();
   const isConstruction = l.includes("submittal") || l.includes("construction") || l.includes("rfi");
-  const isEmail = l.includes("email") || l.includes("inbox");
   if (isConstruction) {
     const m = {
-      trigger: "New project kickoff (primary). Secondary triggers: specification bulletin received, addendum issued, or manually started by the user.",
-      inputs: "Specification PDFs (all relevant divisions), project name, and any bulletins or addenda issued after contract award.",
+      trigger: "When I manually upload specification PDF files directly into the agent interface.",
+      inputs: "Specification PDFs (all relevant divisions), project name, and any bulletins or addenda.",
       outputs: "Formatted Excel submittal log with item number, spec section, description, submittal type, required-by date, and status columns.",
       knowledge: "Past submittal logs from similar projects and spec section naming conventions.",
-      systems: "A shared folder for spec storage and a spreadsheet tool for the output log.",
-      humanGate: "Before delivering the log to any external party, and whenever it finds a spec section it cannot parse or a conflict between documents.",
-    };
-    return m[key] || "";
-  }
-  if (isEmail) {
-    const m = {
-      trigger: "When a new email arrives matching defined criteria — sender, subject keyword, or attachment type.",
-      inputs: "Email subject, sender name, full body text, and any attachments.",
-      outputs: "A draft reply staged in drafts for review, plus a notification that it is ready.",
-      knowledge: "Past email threads with the same sender, standard response templates.",
-      systems: "Email client (read and draft), notification channel.",
-      humanGate: "Before sending any reply externally, and when the email topic requires judgment it doesn't have context for.",
+      systems: "A shared Box or Google Drive folder for spec storage and output delivery.",
+      humanGate: "Before delivering the log to any external party, and whenever it finds a spec section it cannot parse.",
     };
     return m[key] || "";
   }
   const generic = {
-    trigger: "When I manually start it, or when a specific file or message arrives.",
+    trigger: "When I manually upload a file or document directly into the agent interface.",
     inputs: "The data, documents, or requests the agent needs to read before it can begin.",
-    outputs: "A completed document, updated record, or action taken in another system.",
-    knowledge: "Structured lookup tables it queries (approved lists, pricing, substitutions) and formatted past examples it follows — not prose documents.",
-    systems: "The specific apps or databases the agent reads from or writes to.",
-    humanGate: "Before taking any irreversible action, sending anything externally, or when confidence in the result is low.",
+    outputs: "A completed document, updated record, or structured file ready for download.",
+    knowledge: "Structured lookup tables it queries and formatted past examples it follows — not prose documents.",
+    systems: "A shared Box or Google Drive folder for input files and output delivery.",
+    humanGate: "Before saving or sharing any output, or when confidence in the result is low.",
   };
   return generic[key] || "";
 };
@@ -94,28 +81,28 @@ const buildContext = (data, analysis) => {
 const getFallbackHints = (stepKey, concept) => {
   const maps = {
     concept: [
-      { gap: "What starts the agent running?", options: ["when I manually upload a file or document", "when I receive an email with relevant content", "on a daily or weekly schedule"] },
-      { gap: "What does it produce when finished?", options: ["a formatted spreadsheet or report", "a draft document ready for my review", "an updated record in an existing system"] },
-      { gap: "What should happen when the source data changes?", options: ["re-run automatically when source files are updated", "alert me and ask whether to re-run", "produce a change summary showing what's different"] },
+      { gap: "What starts the agent running?", options: ["when I manually upload a file or document", "when I drag and drop a file into the agent", "when I paste content directly into the agent"] },
+      { gap: "What does it produce when finished?", options: ["a formatted spreadsheet or report I can download", "a draft document ready for my review", "an updated record saved to a shared folder"] },
+      { gap: "What should happen when the source data changes?", options: ["I upload the updated file and it re-runs", "I paste the new content and it produces a fresh output", "I provide a new file and it shows what changed"] },
     ],
     trigger: [
-      { gap: "What is the primary trigger?", options: ["when I manually start it by uploading a file", "on a daily schedule at a set time", "when a specific email arrives"] },
-      { gap: "Are there secondary triggers?", options: ["also when a document is updated or replaced", "also when I request a manual refresh", "also when a new project folder is created"] },
+      { gap: "How does the user provide input to the agent?", options: ["I upload a file directly into the agent interface", "I drag and drop a file into the agent", "I paste content or text directly into the agent"] },
+      { gap: "Are there other ways to provide input?", options: ["I provide a Box shared folder link containing the files", "I upload a batch of files at once", "I manually start it after preparing the files"] },
     ],
     inputs: [
-      { gap: "What files or documents does it read?", options: ["PDF documents uploaded manually", "files in a specific shared folder", "email attachments of a specific type"] },
+      { gap: "What files or documents does it read?", options: ["PDF documents uploaded manually", "files dropped into the agent interface", "text or data pasted directly into the agent"] },
       { gap: "What metadata or context does it need?", options: ["the project name and responsible party", "the date range or version number", "who initiated the request"] },
     ],
     outputs: [
-      { gap: "What format is the output?", options: ["an Excel spreadsheet with structured columns", "a PDF report formatted for sharing", "a record entered into an existing system"] },
-      { gap: "Where does the output go?", options: ["saved to a shared folder I specify", "emailed to me as an attachment", "uploaded to a project management tool"] },
+      { gap: "What format is the output?", options: ["an Excel spreadsheet with structured columns", "a PDF report formatted for sharing", "a formatted document ready to download"] },
+      { gap: "Where does the output go?", options: ["downloaded directly from the agent as a file", "saved to a shared Box folder", "saved to a Google Drive folder I specify"] },
     ],
     systems: [
-      { gap: "Where does it read input from?", options: ["a shared folder I can drop files into", "my email inbox", "a specific cloud storage folder"] },
-      { gap: "Where does it deliver output?", options: ["a shared Box or Google Drive folder", "email as an attachment", "a Slack channel notification"] },
+      { gap: "Where does it read input from?", options: ["files I upload directly into the agent interface", "a shared Box folder I drop files into", "a Google Drive folder I provide a link to"] },
+      { gap: "Where does it deliver output?", options: ["downloaded directly from the agent as a file", "saved to a shared Box folder", "saved to a Google Drive folder I specify"] },
     ],
     humanGate: [
-      { gap: "Before sending anything externally", options: ["before emailing or sharing any output", "before uploading to any shared folder", "before notifying any external parties"] },
+      { gap: "Before output is saved or delivered", options: ["always show me the output for review before saving", "only flag for review if a required field couldn't be filled", "produce the output automatically — I'll review the downloaded file myself"] },
       { gap: "When it encounters something unclear", options: ["when a required field is missing or unreadable", "when two documents contradict each other", "when it is less than 80% confident in a result"] },
     ],
   };
@@ -130,6 +117,7 @@ const outputIsDocument = (concept) => {
     l.includes("proposal") || l.includes("summary") || l.includes("sheet") ||
     l.includes("request") || l.includes("record") || l.includes("tracker");
 };
+
 
 const readXlsxAsText = async (file) => {
   const buffer = await file.arrayBuffer();
@@ -146,21 +134,18 @@ const readXlsxAsText = async (file) => {
 const analyzeTemplate = async (file, setSuggestions, setAnalysis, setAnalyzing) => {
   setAnalyzing(true);
   try {
+    const reader = new FileReader();
+    const fileContent = await new Promise((resolve, reject) => {
+      reader.onload = e => resolve(e.target.result);
+      reader.onerror = reject;
+      if (file.type === "application/pdf") { reader.readAsDataURL(file); } else if (!file.name.match(/\.xlsx?$/i)) { reader.readAsText(file); } else { resolve(null); return; }
+    });
     let messages;
-    const isXlsx = file.name.match(/\.xlsx?$/i);
-    const isPdf = file.type === "application/pdf";
-    const prompt = 'Analyze this form that an AI agent will fill out from a source document. Return JSON only:\n{"fields":["all field names"],"source_document_fields":["fields extracted from uploaded source doc — line items, quantities, prices, dates"],"user_provided_fields":["fields user types manually — codes, names, numbers, approvers"],"computed_fields":["fields agent calculates — totals, page numbers"],"required_inputs":"one sentence: what source document does user upload each time?","trigger":"when is this form typically filled out?","outputs":"completed form description","humanGate":"when should human review before submitting?","summary":"one sentence: what is this form for?"}';
-    if (isPdf) {
-      const reader = new FileReader();
-      const fileContent = await new Promise((resolve, reject) => { reader.onload = e => resolve(e.target.result); reader.onerror = reject; reader.readAsDataURL(file); });
+    const prompt = 'Analyze this form that an AI agent will fill out from a source document uploaded by the user. Return JSON only:\n{"fields":["all field names"],"source_document_fields":["fields extracted from uploaded source doc — line items, quantities, prices, dates"],"user_provided_fields":["fields user types manually — codes, names, numbers, approvers"],"computed_fields":["fields agent calculates — totals, page numbers"],"required_inputs":"one sentence: what source document does user upload each time?","trigger":"when is this form typically filled out?","outputs":"completed form description","humanGate":"when should human review before submitting?","summary":"one sentence: what is this form for?"}';
+    if (file.type === "application/pdf") {
       const b64 = fileContent.split(",")[1];
       messages = [{ role: "user", content: [{ type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } }, { type: "text", text: prompt }] }];
-    } else if (isXlsx) {
-      const xlsxText = await readXlsxAsText(file);
-      messages = [{ role: "user", content: "Excel template (all sheets as CSV):\n\n" + xlsxText.substring(0, 4000) + "\n\n" + prompt }];
     } else {
-      const reader = new FileReader();
-      const fileContent = await new Promise((resolve, reject) => { reader.onload = e => resolve(e.target.result); reader.onerror = reject; reader.readAsText(file); });
       messages = [{ role: "user", content: "Form content:\n\n" + fileContent.substring(0, 3000) + "\n\n" + prompt }];
     }
     const raw = await callClaude(messages, "", 600);
@@ -169,7 +154,7 @@ const analyzeTemplate = async (file, setSuggestions, setAnalysis, setAnalyzing) 
       setAnalysis(analysis);
       setSuggestions(prev => ({ ...prev,
         inputs: analysis.required_inputs || prev.inputs,
-        trigger: analysis.trigger || prev.trigger,
+        trigger: "When I manually upload a file or document directly into the agent interface.",
         outputs: analysis.outputs || prev.outputs,
         humanGate: analysis.humanGate || prev.humanGate,
       }));
@@ -181,45 +166,25 @@ const analyzeTemplate = async (file, setSuggestions, setAnalysis, setAnalyzing) 
 const getDomainContext = (text) => {
   const l = text.toLowerCase();
   if (l.includes("submittal log") || l.includes("submittal register"))
-    return "DOMAIN FACT: A submittal log is an OUTPUT built by reading construction SPECIFICATION documents (spec PDFs, Division sections). Input = spec docs. Output = the log. Do not suggest submittals as inputs.";
+    return "DOMAIN FACT: A submittal log is an OUTPUT built by reading construction SPECIFICATION documents (spec PDFs). Input = spec docs uploaded by user. Output = the log. Do not suggest submittals as inputs.";
   if (l.includes("rfi") || (l.includes("change order") && l.includes("construction")))
-    return "DOMAIN FACT: RFI/change order agents read RFI documents and contract terms (inputs) and produce impact analysis memos or notice letters (outputs).";
-  if (l.includes("punch list"))
-    return "DOMAIN FACT: Punch list agents read inspection notes or site photos (inputs) and produce a formatted punch list document (output).";
-  if (l.includes("contract review") || l.includes("contract analysis"))
-    return "DOMAIN FACT: Contract review agents read contract documents (inputs) and produce risk summaries, redlines, or clause extractions (outputs).";
+    return "DOMAIN FACT: RFI agents read RFI documents (uploaded by user as files) and produce impact analysis memos or notice letters (outputs).";
   if (l.includes("invoice") && (l.includes("extract") || l.includes("process") || l.includes("review")))
-    return "DOMAIN FACT: Invoice processing agents read invoice PDFs or emails (inputs) and produce structured data records, approval requests, or accounting entries (outputs).";
-  if (l.includes("lease") && (l.includes("abstract") || l.includes("review") || l.includes("extract")))
-    return "DOMAIN FACT: Lease abstraction agents read lease documents (inputs) and produce structured summaries of key terms (outputs).";
-  if (l.includes("medical record") || l.includes("patient record") || l.includes("clinical note"))
-    return "DOMAIN FACT: Medical record agents read clinical documents or lab results (inputs) and produce structured summaries or coded entries (outputs).";
-  if (l.includes("prior auth") || l.includes("prior authorization"))
-    return "DOMAIN FACT: Prior authorization agents read clinical criteria and patient records (inputs) and produce authorization requests or decisions (outputs).";
-  if (l.includes("lead") && (l.includes("qualify") || l.includes("score") || l.includes("enrich")))
-    return "DOMAIN FACT: Lead qualification agents read prospect data or form submissions (inputs) and produce scored/enriched lead records (outputs).";
-  if (l.includes("proposal") && (l.includes("generat") || l.includes("creat") || l.includes("draft") || l.includes("build")))
-    return "DOMAIN FACT: Proposal generation agents read deal data, product catalogs, and client requirements (inputs) and produce formatted proposal documents (outputs).";
-  if (l.includes("crm") && (l.includes("update") || l.includes("sync") || l.includes("log")))
-    return "DOMAIN FACT: CRM update agents read emails, call transcripts, or meeting notes (inputs) and produce structured CRM field updates or activity logs (outputs).";
-  if (l.includes("expense") && (l.includes("report") || l.includes("approv") || l.includes("process")))
-    return "DOMAIN FACT: Expense agents read receipts or expense forms (inputs) and produce categorized expense reports or approval requests (outputs).";
-  if (l.includes("reconcil"))
-    return "DOMAIN FACT: Reconciliation agents read two or more data sources (inputs) and produce a discrepancy report or matched/unmatched transaction list (outputs).";
-  if (l.includes("resum") || (l.includes("cv") && (l.includes("screen") || l.includes("review") || l.includes("rank"))))
-    return "DOMAIN FACT: Resume screening agents read job descriptions and candidate resumes (inputs) and produce ranked shortlists or fit scores (outputs).";
-  if (l.includes("onboard"))
-    return "DOMAIN FACT: Onboarding agents read new hire data and policy documents (inputs) and produce checklists, task assignments, or welcome communications (outputs).";
-  if (l.includes("ticket") && (l.includes("triage") || l.includes("route") || l.includes("classif") || l.includes("priorit")))
-    return "DOMAIN FACT: Ticket triage agents read incoming support tickets (inputs) and produce classified, prioritized ticket assignments (outputs). They do not resolve tickets.";
-  if ((l.includes("email") || l.includes("inbox")) && (l.includes("draft") || l.includes("reply") || l.includes("response") || l.includes("triage")))
-    return "DOMAIN FACT: Email agents read incoming emails and context (inputs) and produce draft replies or triage decisions (outputs). They do not send without human approval.";
-  if (l.includes("research") && (l.includes("report") || l.includes("summary") || l.includes("brief") || l.includes("compil")))
-    return "DOMAIN FACT: Research agents read web sources, documents, or databases (inputs) and produce synthesized reports or summaries (outputs).";
-  if (l.includes("content") && (l.includes("generat") || l.includes("creat") || l.includes("draft") || l.includes("write")))
-    return "DOMAIN FACT: Content generation agents read briefs, brand guidelines, and reference material (inputs) and produce written content (outputs).";
+    return "DOMAIN FACT: Invoice processing agents read invoice PDFs (uploaded by user) and produce structured data records or approval requests (outputs).";
+  if (l.includes("contract review") || l.includes("contract analysis"))
+    return "DOMAIN FACT: Contract review agents read contract documents (uploaded by user) and produce risk summaries or clause extractions (outputs).";
   if (l.includes("material request") || l.includes("purchase order") || l.includes("po ") || l.includes(" po"))
-    return "DOMAIN FACT: A material request or purchase order agent reads a vendor quote (input) and produces a filled-out company PO or MR form (output). The quote is the input. The completed form is the output.";
+    return "DOMAIN FACT: A material request agent reads a vendor quote (uploaded by user as a file) and produces a filled-out company MR/PO form (output). The quote is the input. The completed form is the output.";
+  if (l.includes("resum") || (l.includes("cv") && (l.includes("screen") || l.includes("review") || l.includes("rank"))))
+    return "DOMAIN FACT: Resume screening agents read job descriptions and candidate resumes (uploaded by user) and produce ranked shortlists or fit scores (outputs).";
+  if (l.includes("expense") && (l.includes("report") || l.includes("approv") || l.includes("process")))
+    return "DOMAIN FACT: Expense agents read receipts or expense forms (uploaded by user) and produce categorized expense reports (outputs).";
+  if (l.includes("lease") && (l.includes("abstract") || l.includes("review") || l.includes("extract")))
+    return "DOMAIN FACT: Lease abstraction agents read lease documents (uploaded by user) and produce structured summaries of key terms (outputs).";
+  if ((l.includes("email") || l.includes("inbox")) && (l.includes("draft") || l.includes("reply") || l.includes("response") || l.includes("triage")))
+    return "DOMAIN FACT: Email agents read email files (uploaded by user as .eml or pasted text — NOT connected to live email) and produce draft reply documents (outputs). No email API required.";
+  if (l.includes("research") && (l.includes("report") || l.includes("summary") || l.includes("brief") || l.includes("compil")))
+    return "DOMAIN FACT: Research agents read source documents (uploaded by user) and produce synthesized reports or summaries (outputs).";
   return "";
 };
 
@@ -232,22 +197,20 @@ const STEPS = [
     hint: "Include: what triggers it, what it produces, and any ongoing update scenarios.",
     coachQ: (val, concept, ctx, correction) => {
       const domainCtx = getDomainContext(val + " " + (concept||""));
-      const correctionCtx = correction ? "IMPORTANT: The user has clarified that at their company, this process means: \"" + correction + "\". Use this understanding for all recommendations.\n\n" : "";
+      const correctionCtx = correction ? "IMPORTANT: The user has clarified that at their company, this process means: \"" + correction + "\". Use this understanding.\n\n" : "";
       return (domainCtx ? domainCtx + "\n\n" : "") + correctionCtx +
         "Agent description: \"" + val + "\"\n\n" +
-        "Return a JSON object with exactly these two keys:\n" +
-        "1. \"understanding\": One sentence describing what you assume this agent's process means at the user's company\n" +
-        "2. \"hints\": Array of 2-3 gaps, each with gap description and 3 injectable options\n\n" +
+        "IMPORTANT CONSTRAINT: This agent has NO email API, NO platform integrations, NO OAuth. The user manually uploads files or pastes content into the agent interface. All suggestions must reflect this — no live connections to external systems.\n\n" +
         "Return ONLY this JSON:\n{\"understanding\":\"I'm treating [term] as [assumption]...\",\"hints\":[{\"gap\":\"...\",\"options\":[\"...\",\"...\",\"...\"]}]}";
     },
   },
   {
     key: "trigger",
     headline: "What kicks it off?",
-    sub: "What starts the agent running? There can be more than one.",
-    placeholder: "e.g. When I manually start it by uploading a file. Also when new data arrives or an update is needed...",
-    hint: "Think about: the initial trigger, ongoing update triggers, and manual override.",
-    coachQ: (val, concept, ctx) => "What has been defined so far:\n" + (ctx||concept) + "\n\nCurrent trigger: \"" + val + "\"\n\nIdentify missing trigger scenarios. Simplest first (manual, file upload, email, schedule) before platform APIs.\n\nReturn ONLY JSON array:\n[{\"gap\":\"gap description\",\"options\":[\"option A\",\"option B\",\"option C\"]}]",
+    sub: "How does the user provide input to start the agent?",
+    placeholder: "e.g. When I manually upload a file or document directly into the agent interface...",
+    hint: "The simplest trigger: user uploads a file, drags and drops, pastes content, or provides a Box/Google Drive link. No email or platform connections needed.",
+    coachQ: (val, concept, ctx) => "What has been defined so far:\n" + (ctx||concept) + "\n\nCurrent trigger: \"" + val + "\"\n\nCRITICAL: This agent has NO email API, NO platform integrations, NO OAuth. The ONLY valid triggers are:\n- User uploads a file directly into the agent interface\n- User drags and drops a file\n- User pastes content into the agent\n- User provides a Box or Google Drive shared folder link\nDo NOT suggest email, webhooks, project management systems, or any API.\n\nReturn ONLY JSON array:\n[{\"gap\":\"gap description\",\"options\":[\"option A\",\"option B\",\"option C\"]}]",
   },
   {
     key: "inputs",
@@ -260,7 +223,7 @@ const STEPS = [
     key: "outputs",
     headline: "What does it produce?",
     sub: "When it finishes, what exists that did not exist before?",
-    placeholder: "e.g. A formatted spreadsheet, filled-out form, or structured document ready for review...",
+    placeholder: "e.g. A formatted spreadsheet, filled-out form, or structured document ready for download...",
     coachQ: (val, concept, ctx) => "What has been defined so far:\n" + (ctx||concept) + "\n\nOutputs described: \"" + val + "\"\n\nWhat output details are missing? For each gap provide 3 short options.\n\nReturn ONLY JSON array:\n[{\"gap\":\"gap description\",\"options\":[\"option A\",\"option B\",\"option C\"]}]",
   },
   {
@@ -278,44 +241,44 @@ const STEPS = [
     headline: "What other documents does it need to cross-reference?",
     sub: "Are there secondary documents it should compare against to catch conflicts or inconsistencies?",
     placeholder: "e.g. A reference list or secondary document the agent should compare against to catch conflicts...",
-    hint: "This is how your agent catches conflicts, substitution issues, or version mismatches.",
+    hint: "Upload once — lives in the agent's permanent document library, available on every run automatically.",
     optional: true,
     starterHints: [
-      { gap: "Does it need to verify anything before producing its output?", options: ["no — just process the input and produce the output, no cross-checks needed for v1", "compare against a reference list I upload to flag anything not on the approved list", "compare against a previous version of the output to catch changes or conflicts"] },
-      { gap: "Are there secondary documents it should check against?", options: ["no secondary documents needed for v1 — keep it simple", "a lookup table or reference list I upload once and it checks against every run", "a prior output or log file to detect duplicates or conflicts"] },
+      { gap: "Does it need to verify anything before producing its output?", options: ["no — just process the input and produce the output, no cross-checks needed for v1", "compare against a reference list I upload once to flag anything not approved", "compare against a previous version of the output to catch changes or conflicts"] },
+      { gap: "Are there secondary documents it should check against?", options: ["no secondary documents needed for v1 — keep it simple", "a lookup table or reference list I upload once and it checks automatically every run", "a prior output file to detect duplicates or conflicts"] },
     ],
-    coachQ: (val, concept, ctx) => "What has been defined so far:\n" + (ctx||concept) + "\n\nCross-reference docs: \"" + val + "\"\n\nIMPORTANT: Always suggest the SIMPLEST viable option first. For v1, cross-referencing is often optional. For each gap provide 3 options, simplest first.\n\nReturn ONLY JSON array:\n[{\"gap\":\"gap description\",\"options\":[\"option A — simplest\",\"option B\",\"option C\"]}]",
+    coachQ: (val, concept, ctx) => "What has been defined so far:\n" + (ctx||concept) + "\n\nCross-reference docs: \"" + val + "\"\n\nIMPORTANT: Suggest simplest options first. All docs are uploaded once by user — no live API connections. For each gap provide 3 options simplest first.\n\nReturn ONLY JSON array:\n[{\"gap\":\"gap description\",\"options\":[\"simplest option\",\"option B\",\"option C\"]}]",
   },
   {
     key: "knowledge",
     headline: "What does it need to look up or reference?",
     sub: "Structured data it queries, past examples it follows, or rules it applies consistently.",
     placeholder: "e.g. A structured lookup table it queries, or formatted past examples it uses as reference...",
-    hint: "Think structured data and formatted examples — not prose docs. Rules and behavioral logic get encoded into the agent directly.",
+    hint: "Upload once — lives in the agent's permanent document library. CSV preferred for lookup tables.",
     optional: true,
     starterHints: [
-      { gap: "Structured lookup data it queries", options: ["an approved products/manufacturers list as a structured table", "a pricing or cost reference table it queries by item", "a lookup table of standard item descriptions"] },
+      { gap: "Structured lookup data it queries", options: ["an approved products/manufacturers list as a structured table (CSV)", "a pricing or cost reference table it queries by item", "a lookup table of standard item descriptions"] },
       { gap: "Formatted examples it follows", options: ["2-3 past completed outputs formatted as structured examples", "sample entries showing correct format and field values", "a reference set of correctly classified items with explanations"] },
     ],
-    coachQ: (val, concept, ctx) => "What has been defined so far:\n" + (ctx||concept) + "\n\nReference data: \"" + val + "\"\n\nIMPORTANT: Distinguish between (1) structured lookup data the agent queries and (2) formatted few-shot examples. Do NOT suggest prose documents, lessons learned, or behavioral rules. For each gap provide 3 short specific options.\n\nReturn ONLY JSON array:\n[{\"gap\":\"gap description\",\"options\":[\"option A\",\"option B\",\"option C\"]}]",
+    coachQ: (val, concept, ctx) => "What has been defined so far:\n" + (ctx||concept) + "\n\nReference data: \"" + val + "\"\n\nDistinguish between (1) structured lookup data and (2) formatted few-shot examples. Do NOT suggest prose documents, lessons learned, or behavioral rules. All reference data uploaded once by user. For each gap provide 3 short specific options.\n\nReturn ONLY JSON array:\n[{\"gap\":\"gap description\",\"options\":[\"option A\",\"option B\",\"option C\"]}]",
   },
   {
     key: "systems",
-    headline: "What other apps does it connect to?",
-    sub: "Which existing software does it read from or write to?",
-    placeholder: "e.g. A shared folder for input files, a spreadsheet tool for output, any other apps it reads from or writes to...",
-    hint: "Be specific. 'Box' is more useful than 'cloud storage'.",
+    headline: "Where does input come from and where does output go?",
+    sub: "Box folder, Google Drive, or directly in the agent interface — no APIs needed.",
+    placeholder: "e.g. Input files uploaded directly into the agent, output saved to a shared Box folder...",
+    hint: "Box and Google Drive shared folders work without any API setup or OAuth. Keep it simple.",
     optional: true,
-    coachQ: (val, concept, ctx) => "What has been defined so far:\n" + (ctx||concept) + "\n\nSystems: \"" + val + "\"\n\nCRITICAL: Suggest SIMPLEST viable system first. Order: (1) Box or Google Drive shared folder, (2) email, (3) Excel/Sheets, (4) platform APIs only if user mentioned them. For each gap provide 3 options simplest first.\n\nReturn ONLY JSON array:\n[{\"gap\":\"gap description\",\"options\":[\"option A — simplest\",\"option B\",\"option C\"]}]",
+    coachQ: (val, concept, ctx) => "What has been defined so far:\n" + (ctx||concept) + "\n\nSystems: \"" + val + "\"\n\nCRITICAL: NO OAuth, NO platform APIs. ONLY suggest: (1) files uploaded directly into agent interface, (2) Box shared folder, (3) Google Drive shared folder, (4) downloaded output file. Do NOT suggest email, CRM, project management platforms, or any connection requiring an API key.\n\nFor each gap provide 3 options, all achievable without API setup.\n\nReturn ONLY JSON array:\n[{\"gap\":\"gap description\",\"options\":[\"option A\",\"option B\",\"option C\"]}]",
   },
   {
     key: "humanGate",
     headline: "When should it stop and check with you?",
     sub: "What decisions are too important to make on its own?",
-    placeholder: "e.g. Before sending any output externally, when it finds something it cannot resolve confidently...",
+    placeholder: "e.g. Before saving any output, when it finds something it cannot resolve confidently...",
     hint: "Good agents know their limits.",
     starterHints: [
-      { gap: "Before the output is delivered or sent", options: ["always show me the completed output for review before saving or sending", "only flag for review if a required field couldn't be filled", "produce the output automatically — I'll review it myself afterwards"] },
+      { gap: "Before the output is saved or delivered", options: ["always show me the completed output for review before saving", "only flag for review if a required field couldn't be filled", "produce the output automatically — I'll review the downloaded file myself"] },
       { gap: "When something is missing or unclear in the input", options: ["stop and ask me what value to use for any missing required field", "leave the field blank and flag it with a note", "make a best guess and mark it clearly for my review"] },
       { gap: "For any values I always need to confirm", options: ["ask me to confirm key reference values (like codes, numbers, or IDs) before starting", "use whatever values I provide at the start with no confirmation needed", "pre-fill from the last run and let me change anything before it proceeds"] },
     ],
@@ -331,86 +294,6 @@ const STEPS = [
     noCoach: true,
   },
 ];
-
-function HintCard({ hint, index, addedOptions, onInject, onUndo, onDiscuss }) {
-  const addedList = addedOptions || [];
-  return (
-    <div style={{ background: addedList.length > 0 ? C.success + "08" : "#0D1B27", border: "1px solid " + (addedList.length > 0 ? C.success + "33" : "#1D3246"), borderRadius: "8px", padding: "0.7rem 0.8rem", marginBottom: "0.4rem" }}>
-      <div style={{ display: "flex", gap: "0.5rem", alignItems: "flex-start" }}>
-        <span style={{ color: addedList.length > 0 ? C.success : C.accent, flexShrink: 0, fontSize: "0.65rem", marginTop: "3px" }}>{addedList.length > 0 ? "+" : "\u2192"}</span>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: "0.82rem", color: "#D0E4EE", lineHeight: 1.65, marginBottom: "0.45rem" }}>{hint.gap}</div>
-          {addedList.length > 0 && (
-            <div style={{ marginBottom: "0.4rem" }}>
-              {addedList.map((a, i) => (
-                <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.2rem" }}>
-                  <span style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.success }}>+ added: "{a}"</span>
-                  <button onClick={() => onUndo(index, a)} style={{ background: "transparent", border: "none", color: C.muted, cursor: "pointer", fontFamily: "monospace", fontSize: "0.5rem", padding: "0 0.2rem" }}>undo</button>
-                </div>
-              ))}
-            </div>
-          )}
-          {hint.options && hint.options.filter(o => !addedList.includes(o)).length > 0 && (
-            <div style={{ marginBottom: "0.35rem" }}>
-              <div style={{ fontFamily: "monospace", fontSize: "0.5rem", color: C.cyan, marginBottom: "0.25rem", letterSpacing: "0.06em" }}>{addedList.length > 0 ? "ADD MORE:" : "PICK A SOLUTION TO INJECT:"}</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
-                {hint.options.filter(o => !addedList.includes(o)).map((opt, oi) => (
-                  <button key={oi} onClick={() => onInject(index, opt)}
-                    style={{ background: "#0A1E2E", border: "1px solid " + C.cyan + "44", borderRadius: "6px", padding: "0.4rem 0.65rem", color: "#A0D4E8", fontFamily: "monospace", fontSize: "0.62rem", cursor: "pointer", textAlign: "left", lineHeight: 1.5 }}
-                    onMouseOver={e => e.currentTarget.style.background = "#0F2A3E"}
-                    onMouseOut={e => e.currentTarget.style.background = "#0A1E2E"}>
-                    + {opt}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          {addedList.length === 0 && (
-            <button onClick={() => onDiscuss(hint.gap)} style={{ background: "transparent", border: "1px solid #1D3246", borderRadius: "5px", padding: "0.3rem 0.65rem", color: "#7090A8", fontFamily: "monospace", fontSize: "0.55rem", cursor: "pointer" }}>Discuss instead</button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ChatBox({ open, onToggle, history, onSend, loading }) {
-  const [input, setInput] = useState("");
-  const endRef = useRef(null);
-  useEffect(() => { endRef.current && endRef.current.scrollIntoView({ behavior: "smooth" }); }, [history]);
-  if (!open) {
-    return (
-      <button onClick={onToggle} style={{ width: "100%", background: "transparent", border: "1px solid " + C.border, borderRadius: "8px", padding: "0.55rem 0.85rem", color: C.muted, fontFamily: "monospace", fontSize: "0.6rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.5rem", textAlign: "left" }}>
-        <span>Chat</span><span>Not sure what this means? Ask me anything.</span>
-      </button>
-    );
-  }
-  return (
-    <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: "10px", overflow: "hidden" }}>
-      <div style={{ background: C.dim, padding: "0.4rem 0.7rem", borderBottom: "1px solid " + C.border, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.muted }}>Assistant (knows your agent)</span>
-        <button onClick={onToggle} style={{ background: "transparent", border: "none", color: C.muted, cursor: "pointer", fontSize: "1rem", lineHeight: 1 }}>x</button>
-      </div>
-      <div style={{ maxHeight: "170px", overflowY: "auto", padding: "0.6rem", display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-        {history.map((m, i) => (
-          <div key={i} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
-            <div style={{ background: m.role === "user" ? C.accent : C.dim, color: m.role === "user" ? "#000" : C.text, borderRadius: m.role === "user" ? "10px 10px 2px 10px" : "10px 10px 10px 2px", padding: "0.45rem 0.6rem", fontFamily: "monospace", fontSize: "0.63rem", lineHeight: 1.6, maxWidth: "88%" }}>{m.content}</div>
-          </div>
-        ))}
-        {loading && <div style={{ display: "flex" }}><div style={{ background: C.dim, borderRadius: "10px 10px 10px 2px", padding: "0.45rem 0.6rem", fontFamily: "monospace", fontSize: "0.6rem", color: C.muted }}>Thinking...</div></div>}
-        <div ref={endRef} />
-      </div>
-      <div style={{ padding: "0.4rem 0.5rem", borderTop: "1px solid " + C.border, display: "flex", gap: "0.3rem" }}>
-        <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && input.trim()) { onSend(input.trim()); setInput(""); } }} placeholder="Ask anything..."
-          style={{ flex: 1, background: C.bg, border: "1px solid " + C.dim, borderRadius: "6px", padding: "0.38rem 0.5rem", color: C.text, fontFamily: "monospace", fontSize: "0.63rem", outline: "none" }} />
-        <button onClick={() => { if (input.trim()) { onSend(input.trim()); setInput(""); } }} disabled={!input.trim() || loading}
-          style={{ background: input.trim() ? C.accent : C.dim, border: "none", borderRadius: "6px", padding: "0.38rem 0.65rem", color: input.trim() ? "#000" : C.muted, fontFamily: "monospace", fontWeight: 700, cursor: input.trim() ? "pointer" : "not-allowed" }}>
-          -&gt;
-        </button>
-      </div>
-    </div>
-  );
-}
 // SmartIntake.jsx PART 2 OF 2 — Agent Academy | April 2026
 // CONTAINS: SmartIntake component with all state, logic, and render
 // Combine: cat SmartIntake_part1.txt SmartIntake_part2.txt > SmartIntake.jsx
@@ -618,38 +501,38 @@ export default function SmartIntake({ onComplete }) {
   // Blueprint completion screen
   if (blueprint) {
     return (
-      <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.94)", zIndex: 1000, fontFamily: "'Syne', sans-serif", display: "flex", justifyContent: "center", alignItems: "center", padding: "1.5rem" }}>
-        <div style={{ background: "#0B0F16", border: "1px solid #182430", borderRadius: "14px", width: "100%", maxWidth: "700px", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <div style={{ padding: "1.1rem 1.5rem 0.85rem", borderBottom: "1px solid #182430", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+      <div style={{ position: "fixed", inset: 0, background: "#F8F9FB", zIndex: 1000, fontFamily: "'Inter', sans-serif", display: "flex", justifyContent: "center", alignItems: "center", padding: "1.5rem" }}>
+        <div style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: "14px", width: "100%", maxWidth: "700px", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <div style={{ padding: "1.1rem 1.5rem 0.85rem", borderBottom: "1px solid #E5E7EB", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
             <div>
-              <div style={{ fontFamily: "monospace", fontSize: "0.55rem", color: C.success, letterSpacing: "0.1em", marginBottom: "0.15rem" }}>+ BLUEPRINT COMPLETE</div>
+              <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.55rem", color: C.success, letterSpacing: "0.1em", marginBottom: "0.15rem" }}>+ BLUEPRINT COMPLETE</div>
               <div style={{ fontWeight: 800, fontSize: "1.2rem", color: C.text }}>{data.name || "Your Agent"} is ready to build.</div>
             </div>
             <button onClick={() => { navigator.clipboard.writeText(blueprint); setBpCopied(true); setTimeout(() => setBpCopied(false), 2500); }}
-              style={{ background: bpCopied ? C.success : "linear-gradient(135deg," + C.accent + "," + C.gold + ")", border: "none", borderRadius: "7px", padding: "0.5rem 0.9rem", color: bpCopied ? "#fff" : "#000", fontFamily: "monospace", fontSize: "0.6rem", fontWeight: 700, cursor: "pointer" }}>
+              style={{ background: bpCopied ? C.success : "linear-gradient(135deg," + C.accent + "," + C.gold + ")", border: "none", borderRadius: "7px", padding: "0.5rem 0.9rem", color: bpCopied ? "#fff" : "#000", fontFamily: "'Inter',sans-serif", fontSize: "0.6rem", fontWeight: 700, cursor: "pointer" }}>
               {bpCopied ? "+ COPIED" : "COPY FOR CLAUDE CODE"}
             </button>
           </div>
           <div style={{ flex: 1, overflowY: "auto", padding: "1.1rem 1.5rem" }}>
-            <div style={{ fontFamily: "monospace", fontSize: "0.5rem", color: C.muted, marginBottom: "0.5rem" }}>YOUR AGENT BLUEPRINT — paste this into Claude Code to build</div>
-            <pre style={{ background: C.code, border: "1px solid #1A2535", borderRadius: "8px", padding: "1rem", fontFamily: "monospace", fontSize: "0.68rem", color: "#B0D4E0", lineHeight: 1.75, whiteSpace: "pre-wrap", margin: 0, marginBottom: "1rem" }}>{blueprint}</pre>
+            <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.5rem", color: C.muted, marginBottom: "0.5rem" }}>YOUR AGENT BLUEPRINT — paste this into Claude Code to build</div>
+            <pre style={{ background: C.code, border: "1px solid #1A2535", borderRadius: "8px", padding: "1rem", fontFamily: "'Inter',sans-serif", fontSize: "0.68rem", color: "#374151", lineHeight: 1.75, whiteSpace: "pre-wrap", margin: 0, marginBottom: "1rem" }}>{blueprint}</pre>
             <div style={{ background: "#1A2535", border: "1px solid " + C.gold + "33", borderRadius: "8px", padding: "0.85rem 1rem", marginBottom: "0.75rem" }}>
-              <div style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.gold, marginBottom: "0.4rem" }}>NEXT STEPS</div>
+              <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.52rem", color: C.gold, marginBottom: "0.4rem" }}>NEXT STEPS</div>
               {["Copy the blueprint above and open Claude Code", "Paste: Build a production agent from this blueprint", "Claude Code builds your agent with state, tools, and failure handling", "Come back to the Academy to refine and improve it over time"].map((s, i) => (
                 <div key={i} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.25rem" }}>
-                  <span style={{ color: C.gold, fontFamily: "monospace", fontSize: "0.6rem", flexShrink: 0 }}>{i + 1}.</span>
-                  <span style={{ fontFamily: "monospace", fontSize: "0.63rem", color: "#A0B8C8", lineHeight: 1.55 }}>{s}</span>
+                  <span style={{ color: C.gold, fontFamily: "'Inter',sans-serif", fontSize: "0.6rem", flexShrink: 0 }}>{i + 1}.</span>
+                  <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.63rem", color: "#4B5563", lineHeight: 1.55 }}>{s}</span>
                 </div>
               ))}
             </div>
             {window._agentAcademyComplete && (
               <button onClick={() => { window._agentAcademyComplete(); window._agentAcademyComplete = null; }}
-                style={{ width: "100%", background: "linear-gradient(135deg," + C.accent + "," + C.gold + ")", border: "none", borderRadius: "8px", padding: "0.65rem", color: "#000", fontFamily: "monospace", fontSize: "0.65rem", fontWeight: 700, cursor: "pointer", marginBottom: "0.5rem" }}>
-                START ACADEMY — DEPLOY & IMPROVE →
+                style={{ width: "100%", background: "linear-gradient(135deg," + C.accent + "," + C.gold + ")", border: "none", borderRadius: "8px", padding: "0.65rem", color: "#000", fontFamily: "'Inter',sans-serif", fontSize: "0.65rem", fontWeight: 700, cursor: "pointer", marginBottom: "0.5rem" }}>
+                {"START ACADEMY \u2014 DEPLOY & IMPROVE \u2192"}
               </button>
             )}
             <button onClick={() => { setBlueprint(null); setStep(0); setData({}); setSuggestions({}); setSuggestState("idle"); }}
-              style={{ background: "transparent", border: "1px solid #182430", borderRadius: "8px", padding: "0.55rem", color: C.muted, fontFamily: "monospace", fontSize: "0.6rem", cursor: "pointer", width: "100%" }}>
+              style={{ background: "transparent", border: "1px solid #E5E7EB", borderRadius: "8px", padding: "0.55rem", color: C.muted, fontFamily: "'Inter',sans-serif", fontSize: "0.6rem", cursor: "pointer", width: "100%" }}>
               Start over with a different agent
             </button>
           </div>
@@ -659,14 +542,14 @@ export default function SmartIntake({ onComplete }) {
   }
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.94)", zIndex: 1000, fontFamily: "'Syne', sans-serif", display: "flex", justifyContent: "center", alignItems: "flex-end" }}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&display=swap'); *{box-sizing:border-box} input,textarea{outline:none} @keyframes fadeup{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}} @keyframes spin{to{transform:rotate(360deg)}} .fadein{animation:fadeup 0.2s ease} .intake-outer{display:flex;justify-content:center;align-items:flex-end;width:100%} .intake-modal{background:#0B0F16;border:1px solid #182430;width:100%;max-width:540px;border-radius:16px 16px 0 0;border-bottom:none;max-height:94vh;display:flex;flex-direction:column;overflow:hidden} @media(min-width:700px){.intake-outer{align-items:center;padding:2rem}.intake-modal{border-radius:14px;border-bottom:1px solid #182430;max-width:660px;max-height:88vh}} @media(min-width:1100px){.intake-modal{max-width:760px}.intake-inner{padding:1.5rem 2rem 0.75rem!important}.intake-head{padding:1rem 2rem 0.7rem!important}.intake-foot{padding:0.8rem 2rem 1.1rem!important}}`}</style>
+    <div style={{ position: "fixed", inset: 0, background: "#F8F9FB", zIndex: 1000, fontFamily: "'Inter', sans-serif", display: "flex", justifyContent: "center", alignItems: "flex-end" }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap'); *{box-sizing:border-box} input,textarea{outline:none} @keyframes fadeup{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}} @keyframes spin{to{transform:rotate(360deg)}} .fadein{animation:fadeup 0.2s ease} .intake-outer{display:flex;justify-content:center;align-items:flex-end;width:100%} .intake-modal{background:#FFFFFF;border:1px solid #E5E7EB;width:100%;max-width:540px;border-radius:16px 16px 0 0;border-bottom:none;max-height:94vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08)} @media(min-width:700px){.intake-outer{align-items:center;padding:2rem}.intake-modal{border-radius:14px;border-bottom:1px solid #E5E7EB;max-width:660px;max-height:88vh}} @media(min-width:1100px){.intake-modal{max-width:760px}.intake-inner{padding:1.5rem 2rem 0.75rem!important}.intake-head{padding:1rem 2rem 0.7rem!important}.intake-foot{padding:0.8rem 2rem 1.1rem!important}}`}</style>
       <div className="intake-outer">
         <div className="intake-modal">
-          <div className="intake-head" style={{ padding: "0.9rem 1.25rem 0.65rem", borderBottom: "1px solid #182430", flexShrink: 0 }}>
+          <div className="intake-head" style={{ padding: "0.9rem 1.25rem 0.65rem", borderBottom: "1px solid #E5E7EB", flexShrink: 0 }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.45rem" }}>
-              <span style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.accent, letterSpacing: "0.1em" }}>AGENT ACADEMY - {step + 1}/{STEPS.length}</span>
-              <span style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.muted }}>{pct}%</span>
+              <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.52rem", color: C.accent, letterSpacing: "0.1em" }}>AGENT ACADEMY - {step + 1}/{STEPS.length}</span>
+              <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.52rem", color: C.muted }}>{pct}%</span>
             </div>
             <div style={{ height: "3px", background: "#1A2535", borderRadius: "2px", overflow: "hidden", marginBottom: "0.35rem" }}>
               <div style={{ width: pct + "%", height: "100%", background: "linear-gradient(90deg," + C.accent + "," + C.gold + ")", transition: "width 0.4s" }} />
@@ -678,45 +561,45 @@ export default function SmartIntake({ onComplete }) {
 
           <div className="intake-inner fadein" style={{ flex: 1, overflowY: "auto", padding: "1.1rem 1.25rem 0.5rem" }}>
             <h2 style={{ fontWeight: 800, fontSize: "1.4rem", margin: "0 0 0.2rem", color: C.text, lineHeight: 1.15 }}>{cur.headline}</h2>
-            <p style={{ fontFamily: "monospace", fontSize: "0.63rem", color: C.muted, margin: "0 0 0.85rem", lineHeight: 1.6 }}>
+            <p style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.63rem", color: C.muted, margin: "0 0 0.85rem", lineHeight: 1.6 }}>
               {cur.sub}{cur.optional ? <span style={{ color: C.accent }}> - optional</span> : null}
             </p>
 
             {suggestState === "loading" && !cur.noSuggest && step > 0 && (
               <div style={{ background: "#1A2535", border: "1px solid " + C.gold + "22", borderRadius: "10px", padding: "0.65rem 0.85rem", marginBottom: "0.7rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
                 <span style={{ color: C.gold }}>o</span>
-                <span style={{ fontFamily: "monospace", fontSize: "0.57rem", color: C.gold }}>Building a suggestion for your agent...</span>
+                <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.57rem", color: C.gold }}>Building a suggestion for your agent...</span>
               </div>
             )}
 
             {suggestState === "done" && hasSuggestion && !val && (
-              <div className="fadein" style={{ background: "#0E1A26", border: "1px solid " + C.gold + "66", borderRadius: "10px", overflow: "hidden", marginBottom: "0.7rem" }}>
+              <div className="fadein" style={{ background: "#F5F3FF", border: "1px solid " + C.gold + "66", borderRadius: "10px", overflow: "hidden", marginBottom: "0.7rem" }}>
                 <div style={{ background: C.gold + "18", padding: "0.45rem 0.85rem", borderBottom: "1px solid " + C.gold + "33" }}>
-                  <span style={{ fontFamily: "monospace", fontSize: "0.5rem", color: C.gold, fontWeight: 700, letterSpacing: "0.07em" }}>SUGGESTED FOR YOUR AGENT</span>
+                  <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.5rem", color: C.gold, fontWeight: 700, letterSpacing: "0.07em" }}>SUGGESTED FOR YOUR AGENT</span>
                 </div>
                 <div style={{ padding: "0.75rem 0.85rem 0.65rem" }}>
                   <div style={{ fontSize: "0.83rem", color: C.text, lineHeight: 1.7, marginBottom: "0.7rem" }}>{suggestions[cur.key]}</div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.35rem" }}>
                     <button onClick={() => setData(p => ({ ...p, [cur.key]: suggestions[cur.key] }))}
-                      style={{ background: "linear-gradient(135deg," + C.gold + ",#D97706)", border: "none", borderRadius: "7px", padding: "0.5rem", color: "#000", fontFamily: "monospace", fontSize: "0.6rem", fontWeight: 700, cursor: "pointer", gridColumn: "1 / -1" }}>Use This</button>
+                      style={{ background: "linear-gradient(135deg," + C.gold + ",#D97706)", border: "none", borderRadius: "7px", padding: "0.5rem", color: "#000", fontFamily: "'Inter',sans-serif", fontSize: "0.6rem", fontWeight: 700, cursor: "pointer", gridColumn: "1 / -1" }}>Use This</button>
                     <button onClick={() => { setChatOpen(true); setChatHistory([{ role: "assistant", content: "Happy to revise that suggestion. What would you like to change about it?" }]); }}
-                      style={{ background: "transparent", border: "1px solid " + C.gold + "55", borderRadius: "7px", padding: "0.45rem", color: C.gold, fontFamily: "monospace", fontSize: "0.58rem", cursor: "pointer" }}>Revise</button>
+                      style={{ background: "transparent", border: "1px solid " + C.gold + "55", borderRadius: "7px", padding: "0.45rem", color: C.gold, fontFamily: "'Inter',sans-serif", fontSize: "0.58rem", cursor: "pointer" }}>Revise</button>
                     <button onClick={() => { setChatOpen(true); setChatHistory([{ role: "assistant", content: "Let's discuss this suggestion. What questions do you have?" }]); }}
-                      style={{ background: "transparent", border: "1px solid #182430", borderRadius: "7px", padding: "0.45rem", color: C.muted, fontFamily: "monospace", fontSize: "0.58rem", cursor: "pointer" }}>Discuss</button>
+                      style={{ background: "transparent", border: "1px solid #E5E7EB", borderRadius: "7px", padding: "0.45rem", color: C.muted, fontFamily: "'Inter',sans-serif", fontSize: "0.58rem", cursor: "pointer" }}>Discuss</button>
                   </div>
                 </div>
               </div>
             )}
 
             {cur.key === "template" && earlyTemplateFile && (
-              <div className="fadein" style={{ marginBottom: "0.65rem", background: "#0A1A10", border: "1px solid " + C.success + "44", borderRadius: "8px", padding: "0.65rem 0.85rem" }}>
-                <div style={{ fontFamily: "monospace", fontSize: "0.5rem", color: C.success, letterSpacing: "0.07em", marginBottom: "0.3rem" }}>TEMPLATE ALREADY UPLOADED FROM STEP 1</div>
+              <div className="fadein" style={{ marginBottom: "0.65rem", background: "#F0FDF4", border: "1px solid " + C.success + "44", borderRadius: "8px", padding: "0.65rem 0.85rem" }}>
+                <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.5rem", color: C.success, letterSpacing: "0.07em", marginBottom: "0.3rem" }}>TEMPLATE ALREADY UPLOADED FROM STEP 1</div>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.35rem" }}>
                   <span style={{ color: C.success }}>+</span>
-                  <span style={{ fontFamily: "monospace", fontSize: "0.65rem", color: C.text }}>{earlyTemplateFile.name}</span>
+                  <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.65rem", color: C.text }}>{earlyTemplateFile.name}</span>
                 </div>
                 {templateAnalysis && (
-                  <div style={{ fontFamily: "monospace", fontSize: "0.58rem", color: "#80A890", lineHeight: 1.6 }}>
+                  <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.58rem", color: "#059669", lineHeight: 1.6 }}>
                     {templateAnalysis.summary}
                     {templateAnalysis.source_document_fields && templateAnalysis.source_document_fields.length > 0 && (
                       <div style={{ marginTop: "0.3rem" }}>
@@ -732,45 +615,45 @@ export default function SmartIntake({ onComplete }) {
                     )}
                   </div>
                 )}
-                <div style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.muted, marginTop: "0.4rem" }}>This template is in your agent's document library. Add a description below or skip this step.</div>
+                <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.52rem", color: C.muted, marginTop: "0.4rem" }}>This template is in your agent's document library. Add a description below or skip this step.</div>
               </div>
             )}
 
             <textarea value={val} onChange={e => setData(p => ({ ...p, [cur.key]: e.target.value }))} placeholder={cur.placeholder} rows={4}
-              style={{ width: "100%", background: "#0F1720", border: "1px solid " + (val ? C.accent + "55" : "#182430"), borderRadius: "10px", padding: "0.8rem", color: C.text, fontFamily: "monospace", fontSize: "0.78rem", lineHeight: 1.7, resize: "none", transition: "border 0.2s", display: "block" }} />
+              style={{ width: "100%", background: "#0F1720", border: "1px solid " + (val ? C.accent + "55" : "#E5E7EB"), borderRadius: "10px", padding: "0.8rem", color: C.text, fontFamily: "'Inter',sans-serif", fontSize: "0.78rem", lineHeight: 1.7, resize: "none", transition: "border 0.2s", display: "block" }} />
 
-            {cur.hint && <div style={{ fontFamily: "monospace", fontSize: "0.56rem", color: C.muted, marginTop: "0.4rem", lineHeight: 1.5 }}>{cur.hint}</div>}
+            {cur.hint && <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.56rem", color: C.muted, marginTop: "0.4rem", lineHeight: 1.5 }}>{cur.hint}</div>}
 
             {cur.isTemplate && (
               <div style={{ marginTop: "0.75rem" }}>
-                <div style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.gold, letterSpacing: "0.07em", marginBottom: "0.4rem" }}>UPLOAD YOUR TEMPLATE FILE (optional)</div>
+                <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.52rem", color: C.gold, letterSpacing: "0.07em", marginBottom: "0.4rem" }}>UPLOAD YOUR TEMPLATE FILE (optional)</div>
                 <div style={{ display: "flex", gap: "0.3rem", marginBottom: "0.5rem", flexWrap: "wrap" }}>
                   {[{key:"template",label:"Output template"},{key:"reference_data",label:"Lookup / reference data"},{key:"crossref",label:"Cross-reference doc"},{key:"few_shot",label:"Example outputs"}].map(cat => (
                     <button key={cat.key} onClick={() => setTemplateCategory(cat.key)}
-                      style={{ background: templateCategory === cat.key ? C.gold + "22" : "transparent", border: "1px solid " + (templateCategory === cat.key ? C.gold : "#182430"), borderRadius: "5px", padding: "0.25rem 0.55rem", color: templateCategory === cat.key ? C.gold : C.muted, fontFamily: "monospace", fontSize: "0.52rem", cursor: "pointer" }}>
+                      style={{ background: templateCategory === cat.key ? C.gold + "22" : "transparent", border: "1px solid " + (templateCategory === cat.key ? C.gold : "#E5E7EB"), borderRadius: "5px", padding: "0.25rem 0.55rem", color: templateCategory === cat.key ? C.gold : C.muted, fontFamily: "'Inter',sans-serif", fontSize: "0.52rem", cursor: "pointer" }}>
                       {cat.label}
                     </button>
                   ))}
                 </div>
-                <div style={{ fontFamily: "monospace", fontSize: "0.5rem", color: C.muted, marginBottom: "0.4rem", lineHeight: 1.5 }}>
+                <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.5rem", color: C.muted, marginBottom: "0.4rem", lineHeight: 1.5 }}>
                   {{template:"The agent will populate this exact format for its output.",reference_data:"A structured table the agent queries at run-time. CSV or JSON preferred.",crossref:"A document the agent compares against the main input to catch conflicts.",few_shot:"Formatted past examples the agent uses as reference."}[templateCategory]}
                 </div>
                 {templateFile ? (
                   <div style={{ background: C.success + "0D", border: "1px solid " + C.success + "44", borderRadius: "8px", padding: "0.6rem 0.8rem", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                       <span style={{ color: C.success }}>+</span>
-                      <span style={{ fontFamily: "monospace", fontSize: "0.62rem", color: C.text }}>{templateFile.name}</span>
-                      <span style={{ fontFamily: "monospace", fontSize: "0.5rem", color: C.gold, background: C.gold + "22", padding: "0.1rem 0.4rem", borderRadius: "3px" }}>{templateCategory}</span>
+                      <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.62rem", color: C.text }}>{templateFile.name}</span>
+                      <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.5rem", color: C.gold, background: C.gold + "22", padding: "0.1rem 0.4rem", borderRadius: "3px" }}>{templateCategory}</span>
                     </div>
-                    <button onClick={() => setTemplateFile(null)} style={{ background: "transparent", border: "none", color: C.muted, cursor: "pointer", fontFamily: "monospace", fontSize: "0.6rem" }}>Remove</button>
+                    <button onClick={() => setTemplateFile(null)} style={{ background: "transparent", border: "none", color: C.muted, cursor: "pointer", fontFamily: "'Inter',sans-serif", fontSize: "0.6rem" }}>Remove</button>
                   </div>
                 ) : (
                   <div onClick={() => templateFileRef.current && templateFileRef.current.click()}
                     style={{ background: C.code, border: "1px dashed " + C.gold + "44", borderRadius: "8px", padding: "0.7rem 0.85rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.6rem" }}>
                     <span style={{ color: C.gold, fontSize: "0.85rem" }}>+</span>
                     <div>
-                      <div style={{ fontFamily: "monospace", fontSize: "0.6rem", color: C.muted }}>Drop your Excel, PDF, or CSV template here</div>
-                      <div style={{ fontFamily: "monospace", fontSize: "0.52rem", color: "#1A2535", marginTop: "0.1rem" }}>Uploaded once — lives in agent's permanent document library</div>
+                      <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.6rem", color: C.muted }}>Drop your Excel, PDF, or CSV template here</div>
+                      <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.52rem", color: "#1A2535", marginTop: "0.1rem" }}>Uploaded once — lives in agent's permanent document library</div>
                     </div>
                   </div>
                 )}
@@ -779,17 +662,17 @@ export default function SmartIntake({ onComplete }) {
             )}
 
             {cur.key === "concept" && val.trim().length > 20 && outputIsDocument(val) && !val.toLowerCase().includes("template i can upload") && !val.toLowerCase().includes("design the format") && !val.toLowerCase().includes("create one together") && (
-              <div className="fadein" style={{ marginTop: "0.75rem", background: "#0E1A26", border: "1px solid " + C.gold + "55", borderRadius: "10px", overflow: "hidden" }}>
+              <div className="fadein" style={{ marginTop: "0.75rem", background: "#F5F3FF", border: "1px solid " + C.gold + "55", borderRadius: "10px", overflow: "hidden" }}>
                 <div style={{ background: C.gold + "18", padding: "0.5rem 0.85rem", borderBottom: "1px solid " + C.gold + "33" }}>
-                  <span style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.gold, fontWeight: 700, letterSpacing: "0.07em" }}>YOUR AGENT PRODUCES A DOCUMENT</span>
+                  <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.52rem", color: C.gold, fontWeight: 700, letterSpacing: "0.07em" }}>YOUR AGENT PRODUCES A DOCUMENT</span>
                 </div>
                 <div style={{ padding: "0.75rem 0.85rem" }}>
                   <div style={{ fontSize: "0.84rem", color: C.text, lineHeight: 1.65, marginBottom: "0.65rem" }}>Does your company already have a template or format for this output?</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
                     {["yes — I have an existing template I can upload", "no — help me design the format and fields", "not yet — let's create one together as we go"].map((opt, oi) => (
                       <button key={oi} onClick={() => { skipNextCoach.current = true; setData(p => ({ ...p, concept: (p.concept || "").trimEnd() + ", " + opt })); }}
-                        style={{ background: "#0A1E2E", border: "1px solid " + C.gold + "33", borderRadius: "6px", padding: "0.45rem 0.7rem", color: "#A8C4D8", fontFamily: "monospace", fontSize: "0.63rem", cursor: "pointer", textAlign: "left", transition: "background 0.15s" }}
-                        onMouseOver={e => e.currentTarget.style.background = "#0F2A3E"} onMouseOut={e => e.currentTarget.style.background = "#0A1E2E"}>
+                        style={{ background: "#F5F3FF", border: "1px solid " + C.gold + "33", borderRadius: "6px", padding: "0.45rem 0.7rem", color: "#4B5563", fontFamily: "'Inter',sans-serif", fontSize: "0.63rem", cursor: "pointer", textAlign: "left", transition: "background 0.15s" }}
+                        onMouseOver={e => e.currentTarget.style.background = "#EDE9FE"} onMouseOut={e => e.currentTarget.style.background = "#F5F3FF"}>
                         + {opt}
                       </button>
                     ))}
@@ -799,37 +682,37 @@ export default function SmartIntake({ onComplete }) {
             )}
 
             {cur.key === "concept" && val.toLowerCase().includes("template i can upload") && (
-              <div className="fadein" style={{ marginTop: "0.75rem", background: "#0A1A10", border: "1px solid " + C.success + "55", borderRadius: "10px", overflow: "hidden" }}>
+              <div className="fadein" style={{ marginTop: "0.75rem", background: "#F0FDF4", border: "1px solid " + C.success + "55", borderRadius: "10px", overflow: "hidden" }}>
                 <div style={{ background: C.success + "18", padding: "0.5rem 0.85rem", borderBottom: "1px solid " + C.success + "33", display: "flex", alignItems: "center", gap: "0.4rem" }}>
                   <span style={{ color: C.success }}>+</span>
-                  <span style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.success, fontWeight: 700 }}>UPLOAD YOUR TEMPLATE NOW</span>
+                  <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.52rem", color: C.success, fontWeight: 700 }}>UPLOAD YOUR TEMPLATE NOW</span>
                 </div>
                 <div style={{ padding: "0.75rem 0.85rem" }}>
-                  <div style={{ fontFamily: "monospace", fontSize: "0.62rem", color: "#90B8A0", lineHeight: 1.6, marginBottom: "0.65rem" }}>Upload it here and the agent will read your actual fields — so every subsequent step gets pre-filled based on what your template actually requires.</div>
+                  <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.62rem", color: "#059669", lineHeight: 1.6, marginBottom: "0.65rem" }}>Upload it here and the agent will read your actual fields — so every subsequent step gets pre-filled based on what your template actually requires.</div>
                   {earlyTemplateFile ? (
                     <div>
                       <div style={{ background: C.success + "0D", border: "1px solid " + C.success + "44", borderRadius: "8px", padding: "0.6rem 0.8rem", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                           <span style={{ color: C.success }}>+</span>
-                          <span style={{ fontFamily: "monospace", fontSize: "0.62rem", color: C.text }}>{earlyTemplateFile.name}</span>
+                          <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.62rem", color: C.text }}>{earlyTemplateFile.name}</span>
                         </div>
-                        <button onClick={() => { setEarlyTemplateFile(null); setTemplateAnalysis(null); }} style={{ background: "transparent", border: "none", color: C.muted, cursor: "pointer", fontFamily: "monospace", fontSize: "0.6rem" }}>Remove</button>
+                        <button onClick={() => { setEarlyTemplateFile(null); setTemplateAnalysis(null); }} style={{ background: "transparent", border: "none", color: C.muted, cursor: "pointer", fontFamily: "'Inter',sans-serif", fontSize: "0.6rem" }}>Remove</button>
                       </div>
-                      {analyzingTemplate && <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.4rem 0" }}><span style={{ color: C.success, fontFamily: "monospace", fontSize: "0.6rem" }}>o</span><span style={{ fontFamily: "monospace", fontSize: "0.58rem", color: C.success }}>Reading your template and mapping required fields...</span></div>}
+                      {analyzingTemplate && <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.4rem 0" }}><span style={{ color: C.success, fontFamily: "'Inter',sans-serif", fontSize: "0.6rem" }}>o</span><span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.58rem", color: C.success }}>Reading your template and mapping required fields...</span></div>}
                       {templateAnalysis && !analyzingTemplate && (
                         <div style={{ background: "#040608", border: "1px solid " + C.success + "33", borderRadius: "6px", padding: "0.55rem 0.7rem" }}>
-                          <div style={{ fontFamily: "monospace", fontSize: "0.5rem", color: C.success, letterSpacing: "0.07em", marginBottom: "0.3rem" }}>FIELDS DETECTED — steps 3-9 pre-filled from your template</div>
-                          <div style={{ fontFamily: "monospace", fontSize: "0.58rem", color: "#80A890", lineHeight: 1.6 }}>{templateAnalysis.summary}</div>
+                          <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.5rem", color: C.success, letterSpacing: "0.07em", marginBottom: "0.3rem" }}>FIELDS DETECTED — steps 3-9 pre-filled from your template</div>
+                          <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.58rem", color: "#059669", lineHeight: 1.6 }}>{templateAnalysis.summary}</div>
                           {templateAnalysis.source_document_fields && templateAnalysis.source_document_fields.length > 0 && (
                             <div style={{ marginTop: "0.3rem" }}>
-                              <span style={{ fontFamily: "monospace", fontSize: "0.44rem", color: C.cyan, marginRight: "0.3rem" }}>FROM SOURCE DOC:</span>
-                              {templateAnalysis.source_document_fields.map((f, i) => <span key={i} style={{ background: C.cyan + "22", border: "1px solid " + C.cyan + "33", borderRadius: "4px", padding: "0.1rem 0.4rem", fontFamily: "monospace", fontSize: "0.5rem", color: C.cyan, marginRight: "0.2rem" }}>{f}</span>)}
+                              <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.44rem", color: C.cyan, marginRight: "0.3rem" }}>FROM SOURCE DOC:</span>
+                              {templateAnalysis.source_document_fields.map((f, i) => <span key={i} style={{ background: C.cyan + "22", border: "1px solid " + C.cyan + "33", borderRadius: "4px", padding: "0.1rem 0.4rem", fontFamily: "'Inter',sans-serif", fontSize: "0.5rem", color: C.cyan, marginRight: "0.2rem" }}>{f}</span>)}
                             </div>
                           )}
                           {templateAnalysis.user_provided_fields && templateAnalysis.user_provided_fields.length > 0 && (
                             <div style={{ marginTop: "0.25rem" }}>
-                              <span style={{ fontFamily: "monospace", fontSize: "0.44rem", color: C.gold, marginRight: "0.3rem" }}>USER PROVIDES:</span>
-                              {templateAnalysis.user_provided_fields.map((f, i) => <span key={i} style={{ background: C.gold + "22", border: "1px solid " + C.gold + "33", borderRadius: "4px", padding: "0.1rem 0.4rem", fontFamily: "monospace", fontSize: "0.5rem", color: C.gold, marginRight: "0.2rem" }}>{f}</span>)}
+                              <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.44rem", color: C.gold, marginRight: "0.3rem" }}>USER PROVIDES:</span>
+                              {templateAnalysis.user_provided_fields.map((f, i) => <span key={i} style={{ background: C.gold + "22", border: "1px solid " + C.gold + "33", borderRadius: "4px", padding: "0.1rem 0.4rem", fontFamily: "'Inter',sans-serif", fontSize: "0.5rem", color: C.gold, marginRight: "0.2rem" }}>{f}</span>)}
                             </div>
                           )}
                         </div>
@@ -840,8 +723,8 @@ export default function SmartIntake({ onComplete }) {
                       style={{ background: "#040608", border: "1px dashed " + C.success + "44", borderRadius: "8px", padding: "0.75rem 0.85rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.6rem" }}>
                       <span style={{ color: C.success, fontSize: "0.9rem" }}>+</span>
                       <div>
-                        <div style={{ fontFamily: "monospace", fontSize: "0.6rem", color: "#70A880" }}>Drop your template file here — Excel, PDF, Word, or CSV</div>
-                        <div style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.muted, marginTop: "0.1rem" }}>Uploaded once — lives in agent's permanent document library</div>
+                        <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.6rem", color: "#059669" }}>Drop your template file here — Excel, PDF, Word, or CSV</div>
+                        <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.52rem", color: C.muted, marginTop: "0.1rem" }}>Uploaded once — lives in agent's permanent document library</div>
                       </div>
                     </div>
                   )}
@@ -855,12 +738,12 @@ export default function SmartIntake({ onComplete }) {
               <div className="fadein" style={{ marginTop: "0.65rem" }}>
                 {contextHintsLoading ? (
                   <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0" }}>
-                    <span style={{ color: C.gold, fontFamily: "monospace", fontSize: "0.6rem" }}>o</span>
-                    <span style={{ fontFamily: "monospace", fontSize: "0.57rem", color: C.gold }}>Personalizing options based on your agent...</span>
+                    <span style={{ color: C.gold, fontFamily: "'Inter',sans-serif", fontSize: "0.6rem" }}>o</span>
+                    <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.57rem", color: C.gold }}>Personalizing options based on your agent...</span>
                   </div>
                 ) : (
                   <>
-                    <div style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.gold, letterSpacing: "0.07em", marginBottom: "0.45rem" }}>
+                    <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.52rem", color: C.gold, letterSpacing: "0.07em", marginBottom: "0.45rem" }}>
                       {contextHints[cur.key] ? "SUGGESTED FOR YOUR AGENT — click to add" : "COMMON OPTIONS — click to add"}
                     </div>
                     {(contextHints[cur.key] || cur.starterHints).map((h, i) => (
@@ -873,34 +756,34 @@ export default function SmartIntake({ onComplete }) {
 
             {hintsLoading && (
               <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginTop: "0.6rem" }}>
-                <span style={{ color: C.cyan, fontFamily: "monospace", fontSize: "0.6rem" }}>o</span>
-                <span style={{ fontFamily: "monospace", fontSize: "0.58rem", color: C.cyan }}>Reviewing your description...</span>
+                <span style={{ color: C.cyan, fontFamily: "'Inter',sans-serif", fontSize: "0.6rem" }}>o</span>
+                <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.58rem", color: C.cyan }}>Reviewing your description...</span>
               </div>
             )}
 
             {!hintsLoading && aiUnderstanding && hints.length > 0 && (
-              <div className="fadein" style={{ marginTop: "0.65rem", background: "#0A1520", border: "1px solid " + C.cyan + "33", borderRadius: "8px", overflow: "hidden" }}>
+              <div className="fadein" style={{ marginTop: "0.65rem", background: "#F5F3FF", border: "1px solid " + C.cyan + "33", borderRadius: "8px", overflow: "hidden" }}>
                 <div style={{ padding: "0.45rem 0.75rem", background: C.cyan + "0D", borderBottom: "1px solid " + C.cyan + "22", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
                     <span style={{ color: C.cyan, fontSize: "0.6rem" }}>◈</span>
-                    <span style={{ fontFamily: "monospace", fontSize: "0.5rem", color: C.cyan, letterSpacing: "0.07em" }}>MY UNDERSTANDING OF YOUR PROCESS</span>
+                    <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.5rem", color: C.cyan, letterSpacing: "0.07em" }}>MY UNDERSTANDING OF YOUR PROCESS</span>
                   </div>
                   {!correctingUnderstanding && (
-                    <button onClick={() => setCorrectingUnderstanding(true)} style={{ background: "transparent", border: "1px solid " + C.cyan + "44", borderRadius: "4px", padding: "0.15rem 0.5rem", color: C.cyan, fontFamily: "monospace", fontSize: "0.5rem", cursor: "pointer" }}>Correct this</button>
+                    <button onClick={() => setCorrectingUnderstanding(true)} style={{ background: "transparent", border: "1px solid " + C.cyan + "44", borderRadius: "4px", padding: "0.15rem 0.5rem", color: C.cyan, fontFamily: "'Inter',sans-serif", fontSize: "0.5rem", cursor: "pointer" }}>Correct this</button>
                   )}
                 </div>
                 <div style={{ padding: "0.55rem 0.75rem" }}>
-                  <div style={{ fontFamily: "monospace", fontSize: "0.63rem", color: "#90B0C8", lineHeight: 1.6 }}>{aiUnderstanding}</div>
+                  <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.63rem", color: "#4B5563", lineHeight: 1.6 }}>{aiUnderstanding}</div>
                   {correctingUnderstanding && (
                     <div style={{ marginTop: "0.5rem" }}>
-                      <div style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.muted, marginBottom: "0.3rem" }}>Tell me what this actually means at your company:</div>
+                      <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.52rem", color: C.muted, marginBottom: "0.3rem" }}>Tell me what this actually means at your company:</div>
                       <input value={correctionInput} onChange={e => setCorrectionInput(e.target.value)} placeholder="e.g. At our company, this means..."
                         onKeyDown={e => { if (e.key === "Enter" && correctionInput.trim()) { correctionRef.current = correctionInput; setCorrectingUnderstanding(false); setHints([]); setAiUnderstanding(""); skipNextCoach.current = false; setData(p => ({ ...p, [cur.key]: (p[cur.key] || "").trimEnd() + " " })); } }}
-                        style={{ width: "100%", background: "#040608", border: "1px solid " + C.cyan + "44", borderRadius: "5px", padding: "0.45rem 0.6rem", color: C.text, fontFamily: "monospace", fontSize: "0.63rem", outline: "none", marginBottom: "0.35rem" }} />
+                        style={{ width: "100%", background: "#040608", border: "1px solid " + C.cyan + "44", borderRadius: "5px", padding: "0.45rem 0.6rem", color: C.text, fontFamily: "'Inter',sans-serif", fontSize: "0.63rem", outline: "none", marginBottom: "0.35rem" }} />
                       <div style={{ display: "flex", gap: "0.35rem" }}>
                         <button onClick={() => { if (!correctionInput.trim()) return; correctionRef.current = correctionInput; setCorrectingUnderstanding(false); setHints([]); setAiUnderstanding(""); skipNextCoach.current = false; setData(p => ({ ...p, [cur.key]: (p[cur.key] || "").trimEnd() + " " })); }}
-                          style={{ background: C.cyan, border: "none", borderRadius: "5px", padding: "0.35rem 0.75rem", color: "#000", fontFamily: "monospace", fontSize: "0.6rem", fontWeight: 700, cursor: "pointer" }}>Update recommendations</button>
-                        <button onClick={() => { setCorrectingUnderstanding(false); setCorrectionInput(""); }} style={{ background: "transparent", border: "1px solid #182430", borderRadius: "5px", padding: "0.35rem 0.6rem", color: C.muted, fontFamily: "monospace", fontSize: "0.6rem", cursor: "pointer" }}>Cancel</button>
+                          style={{ background: C.cyan, border: "none", borderRadius: "5px", padding: "0.35rem 0.75rem", color: "#000", fontFamily: "'Inter',sans-serif", fontSize: "0.6rem", fontWeight: 700, cursor: "pointer" }}>Update recommendations</button>
+                        <button onClick={() => { setCorrectingUnderstanding(false); setCorrectionInput(""); }} style={{ background: "transparent", border: "1px solid #E5E7EB", borderRadius: "5px", padding: "0.35rem 0.6rem", color: C.muted, fontFamily: "'Inter',sans-serif", fontSize: "0.6rem", cursor: "pointer" }}>Cancel</button>
                       </div>
                     </div>
                   )}
@@ -910,34 +793,34 @@ export default function SmartIntake({ onComplete }) {
 
             {!hintsLoading && hints.length > 0 && (
               <div className="fadein" style={{ marginTop: "0.5rem" }}>
-                <div style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.cyan, letterSpacing: "0.07em", marginBottom: "0.45rem" }}>WHAT'S MISSING - click to add (you can add multiple)</div>
+                <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.52rem", color: C.cyan, letterSpacing: "0.07em", marginBottom: "0.45rem" }}>WHAT'S MISSING - click to add (you can add multiple)</div>
                 {hints.map((h, i) => <HintCard key={i} hint={h} index={i} addedOptions={addedOptions[i] || []} onInject={handleInject} onUndo={handleUndo} onDiscuss={handleDiscussHint} />)}
               </div>
             )}
 
             {(cur.key === "crossReference" || cur.key === "knowledge") && (
-              <div style={{ marginTop: "0.75rem", background: "#1A2535", border: "1px solid #182430", borderRadius: "8px", overflow: "hidden" }}>
-                <div style={{ padding: "0.4rem 0.75rem", borderBottom: "1px solid #182430", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <span style={{ fontFamily: "monospace", fontSize: "0.5rem", color: C.cyan, letterSpacing: "0.07em" }}>{cur.key === "crossReference" ? "UPLOAD REFERENCE DOCUMENTS" : "UPLOAD LOOKUP DATA"}</span>
-                  <span style={{ fontFamily: "monospace", fontSize: "0.48rem", color: C.muted }}>added to agent's document library</span>
+              <div style={{ marginTop: "0.75rem", background: "#1A2535", border: "1px solid #E5E7EB", borderRadius: "8px", overflow: "hidden" }}>
+                <div style={{ padding: "0.4rem 0.75rem", borderBottom: "1px solid #E5E7EB", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.5rem", color: C.cyan, letterSpacing: "0.07em" }}>{cur.key === "crossReference" ? "UPLOAD REFERENCE DOCUMENTS" : "UPLOAD LOOKUP DATA"}</span>
+                  <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.48rem", color: C.muted }}>added to agent's document library</span>
                 </div>
                 <div style={{ padding: "0.55rem 0.75rem" }}>
-                  <div style={{ fontFamily: "monospace", fontSize: "0.55rem", color: C.muted, marginBottom: "0.5rem", lineHeight: 1.5 }}>
+                  <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.55rem", color: C.muted, marginBottom: "0.5rem", lineHeight: 1.5 }}>
                     {cur.key === "crossReference" ? "Upload once — lives in agent's permanent document library. Available every run automatically." : "Upload structured lookup tables or formatted examples (CSV preferred). Becomes queryable reference data."}
                   </div>
                   {ragDocuments.filter(d => d.step === cur.key).map((doc, i) => (
                     <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.3rem", background: "#040608", borderRadius: "6px", padding: "0.4rem 0.6rem" }}>
                       <span style={{ color: C.success, fontSize: "0.6rem" }}>+</span>
-                      <span style={{ fontFamily: "monospace", fontSize: "0.6rem", color: C.text, flex: 1 }}>{doc.name}</span>
-                      <span style={{ fontFamily: "monospace", fontSize: "0.48rem", color: C.gold, background: C.gold + "22", padding: "0.1rem 0.4rem", borderRadius: "3px" }}>{doc.category}</span>
+                      <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.6rem", color: C.text, flex: 1 }}>{doc.name}</span>
+                      <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.48rem", color: C.gold, background: C.gold + "22", padding: "0.1rem 0.4rem", borderRadius: "3px" }}>{doc.category}</span>
                       <button onClick={() => setRagDocuments(p => p.filter((_, j) => ragDocuments.indexOf(doc) !== j))} style={{ background: "transparent", border: "none", color: C.muted, cursor: "pointer", fontSize: "0.6rem" }}>×</button>
                     </div>
                   ))}
                   <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", background: "#040608", border: "1px dashed " + C.cyan + "44", borderRadius: "6px", padding: "0.5rem 0.7rem", cursor: "pointer" }}>
                     <span style={{ color: C.cyan, fontSize: "0.8rem" }}>+</span>
                     <div>
-                      <div style={{ fontFamily: "monospace", fontSize: "0.58rem", color: C.muted }}>Upload a reference document or lookup table</div>
-                      <div style={{ fontFamily: "monospace", fontSize: "0.5rem", color: "#1A2535", marginTop: "0.1rem" }}>CSV, Excel, PDF — stored in agent's permanent document library</div>
+                      <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.58rem", color: C.muted }}>Upload a reference document or lookup table</div>
+                      <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.5rem", color: "#1A2535", marginTop: "0.1rem" }}>CSV, Excel, PDF — stored in agent's permanent document library</div>
                     </div>
                     <input type="file" accept=".csv,.xlsx,.xls,.pdf,.doc,.docx,.json" style={{ display: "none" }}
                       onChange={e => { const file = e.target.files[0]; if (!file) return; const category = cur.key === "crossReference" ? "crossref" : "reference_data"; setRagDocuments(p => [...p, { name: file.name, file, category, step: cur.key }]); setData(prev => ({ ...prev, [cur.key]: (prev[cur.key] || "").trimEnd() + (prev[cur.key] ? ", " : "") + file.name + " (uploaded)" })); }} />
@@ -948,9 +831,9 @@ export default function SmartIntake({ onComplete }) {
 
             {step > 0 && data.concept && (
               <div style={{ marginTop: "0.8rem", background: "#040608", border: "1px solid #1A2535", borderRadius: "8px", overflow: "hidden" }}>
-                <div style={{ padding: "0.4rem 0.65rem", background: "#1A2535", borderBottom: "1px solid #182430", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <span style={{ fontFamily: "monospace", fontSize: "0.47rem", color: C.muted, letterSpacing: "0.08em" }}>AGENT BLUEPRINT SO FAR</span>
-                  <span style={{ fontFamily: "monospace", fontSize: "0.47rem", color: C.accent }}>step {step + 1} of {STEPS.length} — {cur.headline}</span>
+                <div style={{ padding: "0.4rem 0.65rem", background: "#1A2535", borderBottom: "1px solid #E5E7EB", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.47rem", color: C.muted, letterSpacing: "0.08em" }}>AGENT BLUEPRINT SO FAR</span>
+                  <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.47rem", color: C.accent }}>step {step + 1} of {STEPS.length} — {cur.headline}</span>
                 </div>
                 <div style={{ padding: "0.55rem 0.65rem", display: "flex", flexDirection: "column", gap: "0.3rem" }}>
                   {[
@@ -965,15 +848,15 @@ export default function SmartIntake({ onComplete }) {
                     { label: "OVERSIGHT", value: data.humanGate, step: 9 },
                   ].filter(item => item.value && item.step <= step).map((item, i) => (
                     <div key={i} style={{ display: "flex", gap: "0.5rem", alignItems: "flex-start" }}>
-                      <span style={{ fontFamily: "monospace", fontSize: "0.44rem", color: C.accent, flexShrink: 0, marginTop: "2px", letterSpacing: "0.06em", minWidth: "52px" }}>{item.label}</span>
-                      <span style={{ fontFamily: "monospace", fontSize: "0.56rem", color: "#5A8898", lineHeight: 1.55 }}>{item.value.length > 90 ? item.value.substring(0, 90) + "..." : item.value}</span>
+                      <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.44rem", color: C.accent, flexShrink: 0, marginTop: "2px", letterSpacing: "0.06em", minWidth: "52px" }}>{item.label}</span>
+                      <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.56rem", color: "#6B7280", lineHeight: 1.55 }}>{item.value.length > 90 ? item.value.substring(0, 90) + "..." : item.value}</span>
                     </div>
                   ))}
                   <div style={{ display: "flex", gap: "0.5rem", alignItems: "flex-start", borderTop: "1px solid #1A2535", paddingTop: "0.3rem", marginTop: "0.1rem" }}>
-                    <span style={{ fontFamily: "monospace", fontSize: "0.44rem", color: C.gold, flexShrink: 0, marginTop: "2px", letterSpacing: "0.06em", minWidth: "52px" }}>
+                    <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.44rem", color: C.gold, flexShrink: 0, marginTop: "2px", letterSpacing: "0.06em", minWidth: "52px" }}>
                       {["WHAT IT DOES","TRIGGER","READS","PRODUCES","TEMPLATE","CROSS-REF","HISTORY","SYSTEMS","OVERSIGHT","NAME"][step] || "CURRENT"}
                     </span>
-                    <span style={{ fontFamily: "monospace", fontSize: "0.56rem", color: C.gold + "99", lineHeight: 1.55, fontStyle: "italic" }}>
+                    <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.56rem", color: C.gold + "99", lineHeight: 1.55, fontStyle: "italic" }}>
                       {val ? (val.length > 90 ? val.substring(0, 90) + "..." : val) : cur.placeholder.substring(0, 60) + "..."}
                     </span>
                   </div>
@@ -985,23 +868,23 @@ export default function SmartIntake({ onComplete }) {
               <ChatBox open={chatOpen} onToggle={() => { setChatOpen(p => !p); if (!chatOpen && chatHistory.length === 0) setChatHistory([{ role: "assistant", content: "This step asks: \"" + cur.headline + "\" - " + cur.sub + " What would you like to know?" }]); }} history={chatHistory} onSend={handleChatSend} loading={chatLoading} />
               {chatOpen && chatSolution && (
                 <div style={{ marginTop: "0.4rem", background: C.success + "0F", border: "1px solid " + C.success + "44", borderRadius: "8px", padding: "0.65rem 0.75rem" }}>
-                  <div style={{ fontFamily: "monospace", fontSize: "0.5rem", color: C.success, letterSpacing: "0.07em", marginBottom: "0.3rem" }}>SOLUTION — READY TO ADD</div>
-                  <div style={{ fontFamily: "monospace", fontSize: "0.63rem", color: C.text, lineHeight: 1.55, marginBottom: "0.45rem" }}>"{chatSolution}"</div>
+                  <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.5rem", color: C.success, letterSpacing: "0.07em", marginBottom: "0.3rem" }}>SOLUTION — READY TO ADD</div>
+                  <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.63rem", color: C.text, lineHeight: 1.55, marginBottom: "0.45rem" }}>"{chatSolution}"</div>
                   <div style={{ display: "flex", gap: "0.4rem" }}>
                     <button onClick={() => { skipNextCoach.current = true; setData(p => ({ ...p, [cur.key]: (p[cur.key] || "").trimEnd() + " " + chatSolution })); setChatSolution(""); }}
-                      style={{ flex: 1, background: C.success, border: "none", borderRadius: "5px", padding: "0.4rem 0.75rem", color: "#000", fontFamily: "monospace", fontSize: "0.6rem", fontWeight: 700, cursor: "pointer" }}>+ Add to my description</button>
-                    <button onClick={() => setChatSolution("")} style={{ background: "transparent", border: "1px solid #182430", borderRadius: "5px", padding: "0.4rem 0.6rem", color: C.muted, fontFamily: "monospace", fontSize: "0.6rem", cursor: "pointer" }}>Discard</button>
+                      style={{ flex: 1, background: C.success, border: "none", borderRadius: "5px", padding: "0.4rem 0.75rem", color: "#000", fontFamily: "'Inter',sans-serif", fontSize: "0.6rem", fontWeight: 700, cursor: "pointer" }}>+ Add to my description</button>
+                    <button onClick={() => setChatSolution("")} style={{ background: "transparent", border: "1px solid #E5E7EB", borderRadius: "5px", padding: "0.4rem 0.6rem", color: C.muted, fontFamily: "'Inter',sans-serif", fontSize: "0.6rem", cursor: "pointer" }}>Discard</button>
                   </div>
                 </div>
               )}
             </div>
           </div>
 
-          <div className="intake-foot" style={{ padding: "0.7rem 1.25rem 0.9rem", borderTop: "1px solid #182430", flexShrink: 0, display: "flex", gap: "0.45rem" }}>
-            {step > 0 && <button onClick={goBack} style={{ background: "transparent", border: "1px solid #182430", borderRadius: "8px", padding: "0.65rem 0.9rem", color: C.muted, fontFamily: "monospace", fontSize: "0.62rem", cursor: "pointer", flexShrink: 0 }}>Back</button>}
-            {cur.optional && <button onClick={skipStep} style={{ background: "transparent", border: "1px solid #182430", borderRadius: "8px", padding: "0.65rem 0.9rem", color: C.muted, fontFamily: "monospace", fontSize: "0.62rem", cursor: "pointer", flexShrink: 0 }}>Skip</button>}
+          <div className="intake-foot" style={{ padding: "0.7rem 1.25rem 0.9rem", borderTop: "1px solid #E5E7EB", flexShrink: 0, display: "flex", gap: "0.45rem" }}>
+            {step > 0 && <button onClick={goBack} style={{ background: "transparent", border: "1px solid #E5E7EB", borderRadius: "8px", padding: "0.65rem 0.9rem", color: C.muted, fontFamily: "'Inter',sans-serif", fontSize: "0.62rem", cursor: "pointer", flexShrink: 0 }}>Back</button>}
+            {cur.optional && <button onClick={skipStep} style={{ background: "transparent", border: "1px solid #E5E7EB", borderRadius: "8px", padding: "0.65rem 0.9rem", color: C.muted, fontFamily: "'Inter',sans-serif", fontSize: "0.62rem", cursor: "pointer", flexShrink: 0 }}>Skip</button>}
             <button onClick={goNext} disabled={!canProceed || hintsLoading}
-              style={{ flex: 1, background: (canProceed && !hintsLoading) ? "linear-gradient(135deg," + C.accent + "," + C.gold + ")" : "#1A2535", border: "none", borderRadius: "8px", padding: "0.75rem", color: canProceed ? "#000" : C.muted, fontFamily: "monospace", fontSize: "0.68rem", fontWeight: 800, cursor: canProceed ? "pointer" : "not-allowed", transition: "background 0.2s" }}>
+              style={{ flex: 1, background: (canProceed && !hintsLoading) ? "linear-gradient(135deg," + C.accent + "," + C.gold + ")" : "#1A2535", border: "none", borderRadius: "8px", padding: "0.75rem", color: canProceed ? "#000" : C.muted, fontFamily: "'Inter',sans-serif", fontSize: "0.68rem", fontWeight: 800, cursor: canProceed ? "pointer" : "not-allowed", transition: "background 0.2s" }}>
               {isLast ? "BUILD MY BLUEPRINT" : "NEXT"}
             </button>
           </div>

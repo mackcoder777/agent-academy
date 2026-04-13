@@ -1,10 +1,10 @@
 import { useState, useRef } from "react";
 
 const C = {
-  bg: "#06080B", surface: "#0B0F16", card: "#0F1720", border: "#182430",
-  accent: "#F97316", gold: "#F59E0B", text: "#DCE8F0", muted: "#3D5568",
-  dim: "#1A2535", code: "#040608", success: "#22C55E", cyan: "#22D3EE",
-  purple: "#A78BFA", error: "#EF4444",
+  bg: "#F8F9FB", surface: "#FFFFFF", card: "#FFFFFF", border: "#E5E7EB",
+  accent: "#7C3AED", gold: "#7C3AED", text: "#1F2937", muted: "#6B7280",
+  dim: "#F3F4F6", code: "#F9FAFB", success: "#059669", cyan: "#7C3AED",
+  purple: "#7C3AED", error: "#EF4444",
 };
 
 const STEP_WEIGHTS = {
@@ -66,35 +66,35 @@ const ConfidenceMeter = ({ score }) => {
   return (
     <div style={{ marginBottom: "0.85rem" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.3rem" }}>
-        <span style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.muted, letterSpacing: "0.07em" }}>BLUEPRINT CONFIDENCE</span>
-        <span style={{ fontFamily: "monospace", fontSize: "0.65rem", color, fontWeight: 700 }}>{score}%</span>
+        <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.52rem", color: C.muted, letterSpacing: "0.07em" }}>BLUEPRINT CONFIDENCE</span>
+        <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.65rem", color, fontWeight: 700 }}>{score}%</span>
       </div>
       <div style={{ height: "4px", background: C.dim, borderRadius: "2px", overflow: "hidden" }}>
         <div style={{ width: score + "%", height: "100%", background: color, borderRadius: "2px", transition: "width 0.6s ease, background 0.4s ease" }} />
       </div>
-      <div style={{ fontFamily: "monospace", fontSize: "0.5rem", color: C.muted, marginTop: "0.2rem" }}>{label}</div>
+      <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.5rem", color: C.muted, marginTop: "0.2rem" }}>{label}</div>
     </div>
   );
 };
 
 const ResultBlock = ({ label, content, color }) => (
   <div style={{ marginBottom: "0.65rem" }}>
-    <div style={{ fontFamily: "monospace", fontSize: "0.5rem", color: color || C.cyan, letterSpacing: "0.07em", marginBottom: "0.2rem" }}>{label}</div>
+    <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.5rem", color: color || C.cyan, letterSpacing: "0.07em", marginBottom: "0.2rem" }}>{label}</div>
     <div style={{ background: C.code, border: "1px solid " + C.dim, borderRadius: "6px", padding: "0.55rem 0.7rem" }}>
       {typeof content === "string" ? (
-        <div style={{ fontFamily: "monospace", fontSize: "0.65rem", color: C.text, lineHeight: 1.65, whiteSpace: "pre-wrap" }}>{content}</div>
+        <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.65rem", color: C.text, lineHeight: 1.65, whiteSpace: "pre-wrap" }}>{content}</div>
       ) : Array.isArray(content) ? (
         content.map((item, i) => (
           <div key={i} style={{ display: "flex", gap: "0.4rem", marginBottom: "0.2rem" }}>
-            <span style={{ color: color || C.cyan, flexShrink: 0, fontFamily: "monospace", fontSize: "0.6rem" }}>{i + 1}.</span>
-            <span style={{ fontFamily: "monospace", fontSize: "0.63rem", color: "#B8D0DC", lineHeight: 1.55 }}>{item}</span>
+            <span style={{ color: color || C.cyan, flexShrink: 0, fontFamily: "'Inter',sans-serif", fontSize: "0.6rem" }}>{i + 1}.</span>
+            <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.63rem", color: "#4B5563", lineHeight: 1.55 }}>{item}</span>
           </div>
         ))
       ) : (
         Object.entries(content).map(([k, v]) => (
           <div key={k} style={{ marginBottom: "0.2rem", display: "flex", gap: "0.5rem" }}>
-            <span style={{ fontFamily: "monospace", fontSize: "0.58rem", color: color || C.cyan, flexShrink: 0 }}>{k}:</span>
-            <span style={{ fontFamily: "monospace", fontSize: "0.6rem", color: C.text }}>{String(v)}</span>
+            <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.58rem", color: color || C.cyan, flexShrink: 0 }}>{k}:</span>
+            <span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.6rem", color: C.text }}>{String(v)}</span>
           </div>
         ))
       )}
@@ -183,59 +183,59 @@ Return ONLY valid JSON (no markdown):
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: C.surface, borderLeft: "1px solid " + C.border }}>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}} .sandbox-result{animation:fadein 0.3s ease} .drop-zone:hover{border-color:#F97316!important;background:#0F1720!important}`}</style>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}} .sandbox-result{animation:fadein 0.3s ease} .drop-zone:hover{border-color:#7C3AED!important;background:#F3F4F6!important}`}</style>
       <div style={{ padding: "0.75rem 1rem", borderBottom: "1px solid " + C.border, flexShrink: 0 }}>
-        <div style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.accent, letterSpacing: "0.1em", marginBottom: "0.15rem" }}>LIVE PREVIEW SANDBOX</div>
-        <div style={{ fontFamily: "monospace", fontSize: "0.58rem", color: C.muted }}>Upload real data. See your agent work right now.</div>
+        <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.52rem", color: C.accent, letterSpacing: "0.1em", marginBottom: "0.15rem" }}>LIVE PREVIEW SANDBOX</div>
+        <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.58rem", color: C.muted }}>Upload real data. See your agent work right now.</div>
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: "0.85rem 1rem" }}>
         <ConfidenceMeter score={confidence} />
         {missingSteps.length > 0 && (
           <div style={{ background: C.dim, border: "1px solid " + C.gold + "33", borderRadius: "7px", padding: "0.55rem 0.7rem", marginBottom: "0.75rem" }}>
-            <div style={{ fontFamily: "monospace", fontSize: "0.5rem", color: C.gold, marginBottom: "0.3rem" }}>COMPLETE THESE TO IMPROVE RESULTS</div>
-            {missingSteps.map((s, i) => <div key={i} style={{ fontFamily: "monospace", fontSize: "0.58rem", color: "#8A9AAA", display: "flex", gap: "0.35rem" }}><span style={{ color: C.gold }}>{"→"}</span>{s}</div>)}
+            <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.5rem", color: C.gold, marginBottom: "0.3rem" }}>COMPLETE THESE TO IMPROVE RESULTS</div>
+            {missingSteps.map((s, i) => <div key={i} style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.58rem", color: "#6B7280", display: "flex", gap: "0.35rem" }}><span style={{ color: C.gold }}>{"→"}</span>{s}</div>)}
           </div>
         )}
         {!hasDefinition ? (
           <div style={{ background: C.dim, border: "1px dashed " + C.border, borderRadius: "8px", padding: "1.5rem 1rem", textAlign: "center" }}>
-            <div style={{ fontFamily: "monospace", fontSize: "0.6rem", color: C.muted }}>Complete Step 1 to enable the preview sandbox.</div>
+            <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.6rem", color: C.muted }}>Complete Step 1 to enable the preview sandbox.</div>
           </div>
         ) : (
           <>
             <div className="drop-zone" onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={e => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }} onClick={() => fileRef.current.click()}
-              style={{ border: "1px dashed " + (dragOver ? C.accent : C.border), borderRadius: "8px", padding: "0.75rem 0.85rem", background: dragOver ? "#0F1720" : C.code, cursor: "pointer", marginBottom: "0.6rem", display: "flex", alignItems: "center", gap: "0.6rem", transition: "all 0.2s" }}>
+              style={{ border: "1px dashed " + (dragOver ? C.accent : C.border), borderRadius: "8px", padding: "0.75rem 0.85rem", background: dragOver ? "#F3F4F6" : C.code, cursor: "pointer", marginBottom: "0.6rem", display: "flex", alignItems: "center", gap: "0.6rem", transition: "all 0.2s" }}>
               <span style={{ fontSize: "1rem" }}>+</span>
               <div>
-                <div style={{ fontFamily: "monospace", fontSize: "0.6rem", color: fileName ? C.text : C.muted }}>{fileName || "Drop a file or click to upload"}</div>
-                <div style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.muted, marginTop: "0.1rem" }}>PDF, TXT, CSV, or any text file</div>
+                <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.6rem", color: fileName ? C.text : C.muted }}>{fileName || "Drop a file or click to upload"}</div>
+                <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.52rem", color: C.muted, marginTop: "0.1rem" }}>PDF, TXT, CSV, or any text file</div>
               </div>
             </div>
             <input ref={fileRef} type="file" accept=".pdf,.txt,.csv,.md,.json,.doc,.docx" style={{ display: "none" }} onChange={e => e.target.files[0] && handleFile(e.target.files[0])} />
-            <div style={{ fontFamily: "monospace", fontSize: "0.5rem", color: C.muted, textAlign: "center", marginBottom: "0.5rem" }}>OR PASTE CONTENT BELOW</div>
+            <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.5rem", color: C.muted, textAlign: "center", marginBottom: "0.5rem" }}>OR PASTE CONTENT BELOW</div>
             <textarea value={fileB64 ? "" : input} onChange={e => { setInput(e.target.value); setFileB64(null); setFileName(""); }} placeholder="Paste an email, document excerpt, data sample, or any input your agent would receive..." rows={4}
-              style={{ width: "100%", background: C.card, border: "1px solid " + C.border, borderRadius: "8px", padding: "0.7rem 0.8rem", color: C.text, fontFamily: "monospace", fontSize: "0.7rem", lineHeight: 1.65, resize: "none", outline: "none", marginBottom: "0.65rem" }} />
+              style={{ width: "100%", background: C.card, border: "1px solid " + C.border, borderRadius: "8px", padding: "0.7rem 0.8rem", color: C.text, fontFamily: "'Inter',sans-serif", fontSize: "0.7rem", lineHeight: 1.65, resize: "none", outline: "none", marginBottom: "0.65rem" }} />
             <button onClick={runPreview} disabled={loading || (!input.trim() && !fileB64)}
-              style={{ width: "100%", background: (loading || (!input.trim() && !fileB64)) ? C.dim : "linear-gradient(135deg," + C.accent + "," + C.gold + ")", border: "none", borderRadius: "8px", padding: "0.7rem", color: (loading || (!input.trim() && !fileB64)) ? C.muted : "#000", fontFamily: "monospace", fontSize: "0.65rem", fontWeight: 700, cursor: (loading || (!input.trim() && !fileB64)) ? "not-allowed" : "pointer", marginBottom: "0.85rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}>
+              style={{ width: "100%", background: (loading || (!input.trim() && !fileB64)) ? C.dim : "linear-gradient(135deg," + C.accent + "," + C.gold + ")", border: "none", borderRadius: "8px", padding: "0.7rem", color: (loading || (!input.trim() && !fileB64)) ? C.muted : "#000", fontFamily: "'Inter',sans-serif", fontSize: "0.65rem", fontWeight: 700, cursor: (loading || (!input.trim() && !fileB64)) ? "not-allowed" : "pointer", marginBottom: "0.85rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}>
               {loading ? <><span style={{ display: "inline-block", animation: "spin 1s linear infinite" }}>o</span> Running agent preview...</> : "RUN PREVIEW →"}
             </button>
-            {error && <div style={{ background: C.error + "15", border: "1px solid " + C.error + "44", borderRadius: "6px", padding: "0.5rem 0.7rem", marginBottom: "0.65rem" }}><div style={{ fontFamily: "monospace", fontSize: "0.6rem", color: C.error }}>{error}</div></div>}
+            {error && <div style={{ background: C.error + "15", border: "1px solid " + C.error + "44", borderRadius: "6px", padding: "0.5rem 0.7rem", marginBottom: "0.65rem" }}><div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.6rem", color: C.error }}>{error}</div></div>}
             {result && (
               <div className="sandbox-result">
-                <div style={{ fontFamily: "monospace", fontSize: "0.52rem", color: C.success, letterSpacing: "0.08em", marginBottom: "0.6rem" }}>+ AGENT PREVIEW COMPLETE</div>
+                <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.52rem", color: C.success, letterSpacing: "0.08em", marginBottom: "0.6rem" }}>+ AGENT PREVIEW COMPLETE</div>
                 {result.detected && <ResultBlock label="DETECTED INPUT TYPE" content={result.detected} color={C.cyan} />}
                 {result.extracted && Object.keys(result.extracted).length > 0 && <ResultBlock label="DATA EXTRACTED" content={result.extracted} color={C.purple} />}
                 {result.steps && result.steps.length > 0 && <ResultBlock label="AGENT WOULD DO THIS" content={result.steps} color={C.accent} />}
                 {result.would_produce && <ResultBlock label="OUTPUT PRODUCED" content={result.would_produce} color={C.gold} />}
                 {result.gaps && result.gaps.length > 0 && (
                   <div style={{ marginBottom: "0.65rem" }}>
-                    <div style={{ fontFamily: "monospace", fontSize: "0.5rem", color: C.gold, marginBottom: "0.2rem" }}>COMPLETE MORE STEPS TO IMPROVE</div>
+                    <div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.5rem", color: C.gold, marginBottom: "0.2rem" }}>COMPLETE MORE STEPS TO IMPROVE</div>
                     <div style={{ background: C.code, border: "1px solid " + C.dim, borderRadius: "6px", padding: "0.55rem 0.7rem" }}>
-                      {result.gaps.map((g, i) => <div key={i} style={{ display: "flex", gap: "0.4rem", marginBottom: "0.2rem" }}><span style={{ color: C.gold, fontFamily: "monospace", fontSize: "0.6rem" }}>{"→"}</span><span style={{ fontFamily: "monospace", fontSize: "0.62rem", color: "#A0B8C8", lineHeight: 1.55 }}>{g}</span></div>)}
+                      {result.gaps.map((g, i) => <div key={i} style={{ display: "flex", gap: "0.4rem", marginBottom: "0.2rem" }}><span style={{ color: C.gold, fontFamily: "'Inter',sans-serif", fontSize: "0.6rem" }}>{"→"}</span><span style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.62rem", color: "#4B5563", lineHeight: 1.55 }}>{g}</span></div>)}
                     </div>
                   </div>
                 )}
-                {result.confidence_note && <div style={{ background: C.dim, border: "1px solid " + C.border, borderRadius: "6px", padding: "0.5rem 0.65rem" }}><div style={{ fontFamily: "monospace", fontSize: "0.58rem", color: C.muted, lineHeight: 1.6 }}>{result.confidence_note}</div></div>}
-                <button onClick={() => { setResult(null); setInput(""); setFileName(""); setFileB64(null); }} style={{ width: "100%", background: "transparent", border: "1px solid " + C.border, borderRadius: "6px", padding: "0.45rem", color: C.muted, fontFamily: "monospace", fontSize: "0.58rem", cursor: "pointer", marginTop: "0.6rem" }}>Run again with different input</button>
+                {result.confidence_note && <div style={{ background: C.dim, border: "1px solid " + C.border, borderRadius: "6px", padding: "0.5rem 0.65rem" }}><div style={{ fontFamily: "'Inter',sans-serif", fontSize: "0.58rem", color: C.muted, lineHeight: 1.6 }}>{result.confidence_note}</div></div>}
+                <button onClick={() => { setResult(null); setInput(""); setFileName(""); setFileB64(null); }} style={{ width: "100%", background: "transparent", border: "1px solid " + C.border, borderRadius: "6px", padding: "0.45rem", color: C.muted, fontFamily: "'Inter',sans-serif", fontSize: "0.58rem", cursor: "pointer", marginTop: "0.6rem" }}>Run again with different input</button>
               </div>
             )}
           </>
