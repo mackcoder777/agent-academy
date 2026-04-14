@@ -72,22 +72,133 @@ const isFormFilling = (t) => {
     (l.includes("vendor") && l.includes("form"));
 };
 
+// ─── EXCEL PARSER via SheetJS ─────────────────────────────────────────────────
+// Reads an .xlsx file in the browser, extracts cell addresses + values as text.
+// Returns a structured string suitable for Claude analysis.
+const parseExcelInBrowser = (file) => new Promise((resolve, reject) => {
+  const script = document.createElement("script");
+  script.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+  script.onload = () => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const wb = window.XLSX.read(data, { type: "array" });
+        const result = [];
+        wb.SheetNames.forEach(sheetName => {
+          const ws = wb.Sheets[sheetName];
+          const rows = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+          // Also get cell addresses for non-empty cells
+          const cellMap = [];
+          const ref = ws["!ref"];
+          if (ref) {
+            const range = window.XLSX.utils.decode_range(ref);
+            for (let R = range.s.r; R <= range.e.r; R++) {
+              for (let C2 = range.s.c; C2 <= range.e.c; C2++) {
+                const addr = window.XLSX.utils.encode_cell({ r: R, c: C2 });
+                const cell = ws[addr];
+                if (cell && cell.v !== undefined && cell.v !== "") {
+                  cellMap.push(`${addr}: ${String(cell.v).substring(0, 60)}`);
+                }
+              }
+            }
+          }
+          result.push({
+            sheet: sheetName,
+            cellMap: cellMap.slice(0, 80), // limit for Claude context
+            rows: rows.slice(0, 25),
+          });
+        });
+        resolve(result);
+      } catch (err) { reject(err); }
+    };
+    reader.onerror = reject;
+    reader.readAsArrayBuffer(file);
+  };
+  script.onerror = () => reject(new Error("SheetJS failed to load"));
+  // Only add if not already loaded
+  if (window.XLSX) {
+    // Already loaded — run directly
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const wb = window.XLSX.read(data, { type: "array" });
+        const result = [];
+        wb.SheetNames.forEach(sheetName => {
+          const ws = wb.Sheets[sheetName];
+          const cellMap = [];
+          const ref = ws["!ref"];
+          if (ref) {
+            const range = window.XLSX.utils.decode_range(ref);
+            for (let R = range.s.r; R <= range.e.r; R++) {
+              for (let C2 = range.s.c; C2 <= range.e.c; C2++) {
+                const addr = window.XLSX.utils.encode_cell({ r: R, c: C2 });
+                const cell = ws[addr];
+                if (cell && cell.v !== undefined && cell.v !== "") {
+                  cellMap.push(`${addr}: ${String(cell.v).substring(0, 60)}`);
+                }
+              }
+            }
+          }
+          const rows = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+          result.push({ sheet: sheetName, cellMap: cellMap.slice(0, 80), rows: rows.slice(0, 25) });
+        });
+        resolve(result);
+      } catch (err) { reject(err); }
+    };
+    reader.onerror = reject;
+    reader.readAsArrayBuffer(file);
+  } else {
+    document.head.appendChild(script);
+  }
+});
+
 // ─── TEMPLATE ANALYSIS ────────────────────────────────────────────────────────
 const analyzeTemplate = async (file, onResult, onDone) => {
   try {
-    const content = await readFile(file);
+    const ext = file.name.split(".").pop().toLowerCase();
+    const isPDF = file.type === "application/pdf";
+    const isExcel = ["xlsx", "xls", "xlsm"].includes(ext);
+
     let msgs;
-    if (file.type === "application/pdf") {
+
+    if (isPDF) {
+      const content = await readFile(file);
       msgs = [{ role: "user", content: [
         { type: "document", source: { type: "base64", media_type: "application/pdf", data: content.split(",")[1] } },
-        { type: "text", text: `Analyze this form/template that an AI agent will fill out. Return ONLY JSON:\n{"fields":["field1","field2",...],"required_user_inputs":["fields the user must supply that won't come from vendor quotes, like project number, GL account, requested by"],"auto_fillable":["fields that can be extracted from vendor quotes automatically, like item description, qty, unit price"],"summary":"one sentence: what this form is for","file_format":"excel|pdf|word|csv"}` }
+        { type: "text", text: `Analyze this form/template an AI agent will fill out. Identify every field label, what data goes in it, and whether that data comes from a vendor quote or must be provided by the user running the agent.\n\nReturn ONLY JSON:\n{"fields":["exact field label 1","exact field label 2",...],"required_user_inputs":["fields that won't be in vendor quotes — like MR number, job name, date required, cost code, approved by"],"auto_fillable":["fields extractable from vendor quotes — like item description, qty, unit price, total"],"cell_map":[{"field":"field label","cell":"cell address or column name","notes":"what goes here"}],"summary":"one sentence: what this form is for","file_format":"pdf"}` }
       ]}];
+    } else if (isExcel) {
+      // Use SheetJS to get real cell data
+      let sheetData;
+      try {
+        sheetData = await parseExcelInBrowser(file);
+      } catch (e) {
+        console.warn("SheetJS parse failed, falling back to text:", e.message);
+        const content = await readFile(file);
+        msgs = [{ role: "user", content: `File: ${file.name}\nNote: This is an Excel file. Parse it as a form template.\n\n${content.substring(0, 2000)}\n\nReturn ONLY JSON:\n{"fields":[],"required_user_inputs":[],"auto_fillable":[],"cell_map":[],"summary":"Excel form template","file_format":"excel"}` }];
+      }
+      if (sheetData) {
+        // Build a clean representation for Claude
+        const sheetSummary = sheetData.map(s => {
+          const cellLines = s.cellMap.join("\n  ");
+          return `=== Sheet: ${s.sheet} ===\nCell map (address: value):\n  ${cellLines}`;
+        }).join("\n\n");
+
+        msgs = [{ role: "user", content: `This is an Excel form template (${file.name}) that an AI agent will fill out by reading vendor quote documents.\n\nHere are the actual cell addresses and values found in this workbook:\n\n${sheetSummary}\n\nAnalyze every field label and determine:\n1. Which fields an AI agent can auto-fill by reading a vendor quote (items, quantities, unit prices, descriptions, freight, terms)\n2. Which fields the USER must provide when running the agent (MR number, job name, date, cost codes, ship-to address, written by, approved by)\n3. Which fields are for computed values (totals = qty × unit price)\n4. Which cells are just labels/headers vs. actual input cells\n\nReturn ONLY JSON:\n{"fields":["exact field label from the form",...],"required_user_inputs":["field labels the user must supply each run"],"auto_fillable":["field labels auto-extractable from vendor quotes"],"computed":["field labels computed by the agent"],"cell_map":[{"field":"field label","cell":"exact cell address like H1 or A20-A47","source":"auto|user|computed|skip","notes":"what goes here in plain English"}],"summary":"one sentence: what this form is for","file_format":"excel"}` }];
+      }
     } else {
-      msgs = [{ role: "user", content: `This is a form an AI agent will fill out:\n\n${content.substring(0, 4000)}\n\nReturn ONLY JSON:\n{"fields":["field1","field2",...],"required_user_inputs":["fields user must supply that won't come from source docs, like project number, GL account, cost center, requested by"],"auto_fillable":["fields extractable from source docs automatically"],"summary":"one sentence: what this form is for","file_format":"excel|pdf|word|csv"}` }];
+      // Word doc or CSV — read as text
+      const content = await readFile(file);
+      msgs = [{ role: "user", content: `This is a form template an AI agent will fill out:\n\n${content.substring(0, 4000)}\n\nAnalyze every field. Return ONLY JSON:\n{"fields":["field label 1",...],"required_user_inputs":["fields user must supply"],"auto_fillable":["fields auto-extractable from source docs"],"cell_map":[{"field":"label","cell":"location","source":"auto|user|computed|skip","notes":"what goes here"}],"summary":"one sentence: what this form is for","file_format":"word|csv"}` }];
     }
-    const raw = await callClaude(msgs, "", 600);
-    const result = parseJSON(raw);
-    if (result) onResult(result);
+
+    if (msgs) {
+      const raw = await callClaude(msgs, "", 800);
+      const result = parseJSON(raw);
+      if (result) onResult(result);
+    }
   } catch (e) { console.error("Template analysis failed:", e); }
   onDone();
 };
